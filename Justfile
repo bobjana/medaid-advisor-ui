@@ -4,19 +4,24 @@
 
 # ---- Setup ----
 
-# Install dependencies (clean)
+# Install dependencies from lockfile (CI-friendly)
 install:
 	npm ci
 
+# Wipe node_modules and install fresh
+install-fresh:
+	rm -rf node_modules
+	npm install
+
 # ---- Development ----
 
-# Start Next.js dev server
+# Start Next.js dev server (http://localhost:3000)
 dev:
 	npm run dev
 
 # ---- Build ----
 
-# Production build
+# Next.js production build (writes .next/standalone)
 build:
 	npm run build
 
@@ -24,37 +29,38 @@ build:
 typecheck:
 	npm run typecheck
 
-# Start production server (after build)
+# Start the production server (after build)
 start:
 	npm run start
 
-# ---- Lint ----
+# ---- Quality Gates ----
 
 # Run ESLint
 lint:
 	npm run lint
 
-# Run ESLint with auto-fix
+# Run ESLint with --fix
 format:
 	npx eslint . --fix
 
-# ---- Test ----
-
-# Run vitest once
+# Run the test suite once
 test:
 	npm test
 
-# Run vitest in watch mode
+# Run the test suite in watch mode
 test-watch:
 	npm run test:watch
+
+# Run every gate: typecheck + lint + test
+check: typecheck lint test
 
 # ---- Cleanup ----
 
 # Remove build artifacts
 clean:
-	rm -rf .next *.tsbuildinfo
+	rm -rf .next tsconfig.tsbuildinfo
 
-# Deep clean (remove node_modules too)
+# Deep clean (also remove node_modules)
 clean-all: clean
 	rm -rf node_modules
 
@@ -81,12 +87,12 @@ ar_repo    := "medaid-repo/medaid-advisor-ui"
 ar_host    := region + "-docker.pkg.dev"
 
 # Build (linux/amd64) and push to Artifact Registry
-docker-push: build
+docker-push: docker-build
 	docker build --platform linux/amd64 -t {{ar_host}}/{{project_id}}/{{ar_repo}}:latest .
 	docker push {{ar_host}}/{{project_id}}/{{ar_repo}}:latest
 
-# Deploy to Cloud Run
-deploy: docker-push
+# Deploy the latest pushed image to Cloud Run
+deploy:
 	gcloud run deploy {{service}} \
 		--image={{ar_host}}/{{project_id}}/{{ar_repo}}:latest \
 		--region={{region}} \
@@ -95,9 +101,17 @@ deploy: docker-push
 		--allow-unauthenticated \
 		--project={{project_id}}
 
-# Full build + deploy pipeline
-ship: deploy
+# Build, push, and deploy in one go
+ship: docker-push deploy
 
-# View recent Cloud Run revisions
+# Stream Cloud Run logs (Ctrl-C to stop)
+logs:
+	gcloud run services logs tail {{service}} --region={{region}} --project={{project_id}}
+
+# Open the deployed service in the default browser
+open:
+	gcloud run services describe {{service}} --region={{region}} --project={{project_id}} --format='value(status.url)' | xargs open
+
+# List recent Cloud Run revisions
 revisions:
 	gcloud run revisions list --service={{service}} --region={{region}} --project={{project_id}}
