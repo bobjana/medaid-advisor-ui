@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { FormProvider, useForm } from 'react-hook-form';
+import { FormProvider, useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslation } from '@/i18n';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -37,14 +37,18 @@ export default function QuestionnairePage() {
     mode: 'onBlur',
   });
 
-  const { watch, setValue, handleSubmit, reset } = methods;
+  const { setValue, handleSubmit, reset } = methods;
+
+  // useWatch (not watch) is the React-Compiler-compatible way to subscribe
+  // to form value changes — watch() returns a function that React Compiler
+  // cannot safely memoize.
+  const watchedData = useWatch({ control: methods.control }) as QuestionnaireData;
 
   useEffect(() => {
-    const subscription = watch((data) => {
-      setSavedData(data as QuestionnaireData);
-    });
-    return () => subscription.unsubscribe();
-  }, [watch, setSavedData]);
+    if (watchedData) {
+      setSavedData(watchedData);
+    }
+  }, [watchedData, setSavedData]);
 
   const currentIndex = sectionOrder.indexOf(currentSection);
   const progress = ((currentIndex + 1) / sectionOrder.length) * 100;

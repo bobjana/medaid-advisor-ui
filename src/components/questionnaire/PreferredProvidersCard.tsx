@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useFormContext, Controller } from 'react-hook-form';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -67,23 +67,22 @@ const specialistTypes = [
 export function PreferredProvidersCard() {
   const { control, watch, setValue } = useFormContext<QuestionnaireData>();
   const preferredProviders = watch('preferredProviders');
-  
-  const [showProviderSelector, setShowProviderSelector] = useState(false);
-  const [selectedGroup, setSelectedGroup] = useState<HospitalGroup | ''>('');
+
+  // Derived from form state — no useEffect / setState-in-effect needed.
+  const showProviderSelector = preferredProviders?.hasPreferredProviders ?? false;
+  const selectedGroup = (preferredProviders?.hospitalGroup ?? '') as HospitalGroup | '';
+
   const [showSpecialistSearch, setShowSpecialistSearch] = useState(false);
 
-  useEffect(() => {
-    if (preferredProviders?.hasPreferredProviders) {
-      setShowProviderSelector(true);
-    } else {
-      setShowProviderSelector(false);
-      setSelectedGroup('');
+  const handleHasPreferredChange = (hasPreferred: boolean) => {
+    setValue('preferredProviders.hasPreferredProviders', hasPreferred);
+    if (!hasPreferred) {
+      // User opted out — collapse the specialist UI so it doesn't linger.
       setShowSpecialistSearch(false);
     }
-  }, [preferredProviders?.hasPreferredProviders]);
+  };
 
   const handleGroupChange = (group: HospitalGroup) => {
-    setSelectedGroup(group);
     setValue('preferredProviders.hospitalGroup', group);
     setValue('preferredProviders.specificHospitals', []);
   };
@@ -120,8 +119,8 @@ export function PreferredProvidersCard() {
           name="preferredProviders.hasPreferredProviders"
           control={control}
           render={({ field }) => (
-            <RadioGroup 
-              onValueChange={(value) => field.onChange(value === 'yes')} 
+            <RadioGroup
+              onValueChange={(value) => handleHasPreferredChange(value === 'yes')}
               value={field.value ? 'yes' : 'no'}
               className="space-y-3"
             >
@@ -131,7 +130,7 @@ export function PreferredProvidersCard() {
               </div>
               <div className="flex items-center space-x-2">
                 <RadioGroupItem value="no" id="has-preferred-no" />
-                <Label htmlFor="has-preferred-no">No, I'm flexible</Label>
+                <Label htmlFor="has-preferred-no">No, I&apos;m flexible</Label>
               </div>
             </RadioGroup>
           )}

@@ -16,14 +16,20 @@ export function Preferences() {
   const { t } = useTranslation();
   const { control } = useFormContext<QuestionnaireData>();
 
-  const benefitFields = [
+  type BenefitField = {
+    key: keyof QuestionnaireData['benefitPriorities'];
+    label: string;
+    note?: string;
+  };
+
+  const benefitFields: BenefitField[] = [
     { key: 'maternity', label: t('preferences.benefitsPriority.maternity') },
     { key: 'mentalHealth', label: t('preferences.benefitsPriority.mentalHealth') },
     { key: 'dental', label: t('preferences.benefitsPriority.dental') },
     { key: 'optical', label: t('preferences.benefitsPriority.optical') },
     { key: 'alternativeMedicine', label: t('preferences.benefitsPriority.alternativeMedicine'), note: t('preferences.benefitsPriority.alternativeNote') },
     { key: 'travelCover', label: t('preferences.benefitsPriority.travelCover') },
-  ] as const;
+  ];
 
   return (
     <div className="space-y-6">
@@ -146,8 +152,8 @@ export function Preferences() {
               <div key={benefit.key} className="space-y-2">
                 <div className="flex justify-between items-center">
                   <Label>{benefit.label}</Label>
-                  {(benefit as any).note && (
-                    <p className="text-xs text-muted-foreground">{(benefit as any).note}</p>
+                  {benefit.note && (
+                    <p className="text-xs text-muted-foreground">{benefit.note}</p>
                   )}
                 </div>
                 <Controller

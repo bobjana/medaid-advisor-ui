@@ -14,6 +14,13 @@ import type { QuestionnaireData } from '@/types';
 import { allConditions } from '@/types';
 import { Plus, Trash2 } from 'lucide-react';
 
+// Stable id generator: monotonic counter scoped to the module. Avoids
+// Date.now() (impure) and crypto.randomUUID() (incompatible with React
+// Compiler's purity rules). Safe because each call to addProcedure is
+// user-initiated, so we never collide within the same tick.
+let nextProcedureId = 0;
+const makeProcedureId = () => `proc-${++nextProcedureId}`;
+
 export function HealthStatus() {
   const { t } = useTranslation();
   const { register, watch, setValue, control } = useFormContext<QuestionnaireData>();
@@ -35,7 +42,7 @@ export function HealthStatus() {
   const addProcedure = () => {
     setValue('plannedProcedures', [
       ...plannedProcedures,
-      { id: Date.now().toString(), who: 'me', procedureType: '', estimatedCost: '' },
+      { id: makeProcedureId(), who: 'me', procedureType: '', estimatedCost: '' },
     ]);
   };
 
