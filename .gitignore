@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Next.js (co-located sub-project)
+.next/
+nextjs/.next/
+nextjs/node_modules/
+nextjs/tsconfig.tsbuildinfo
+nextjs/.turbo/
