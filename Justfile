@@ -51,6 +51,10 @@ test:
 test-watch:
 	npm run test:watch
 
+# Run the test suite with coverage report (HTML in ./coverage/)
+coverage:
+	npm run test:coverage
+
 # Run every gate: typecheck + lint + test
 check: typecheck lint test
 

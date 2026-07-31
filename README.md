@@ -71,6 +71,7 @@ just lint           # eslint
 just format         # eslint --fix
 just test           # vitest run
 just test-watch     # vitest --watch
+just coverage       # vitest run --coverage (writes ./coverage/)
 
 just build          # next build (writes .next/standalone)
 just start          # next start (after build)
