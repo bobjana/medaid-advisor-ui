@@ -10,27 +10,23 @@ install:
 
 # ---- Development ----
 
-# Start Vite dev server
+# Start Next.js dev server
 dev:
 	npm run dev
 
-# Start dev server accessible on LAN
-dev-host:
-	npx vite --host
-
 # ---- Build ----
 
-# Type-check and production build
+# Production build
 build:
 	npm run build
 
 # Type-check only (no emit)
 typecheck:
-	npx tsc -b --noEmit
+	npm run typecheck
 
-# Preview production build locally
-preview:
-	npm run preview
+# Start production server (after build)
+start:
+	npm run start
 
 # ---- Lint ----
 
@@ -42,11 +38,21 @@ lint:
 format:
 	npx eslint . --fix
 
+# ---- Test ----
+
+# Run vitest once
+test:
+	npm test
+
+# Run vitest in watch mode
+test-watch:
+	npm run test:watch
+
 # ---- Cleanup ----
 
 # Remove build artifacts
 clean:
-	rm -rf dist node_modules/.vite *.tsbuildinfo
+	rm -rf .next *.tsbuildinfo
 
 # Deep clean (remove node_modules too)
 clean-all: clean
@@ -56,22 +62,22 @@ clean-all: clean
 
 # Build Docker image locally
 docker-build:
-	docker build -t medaid-questionnaire:latest .
+	docker build -t medaid-advisor-ui:latest .
 
 # Build and run container locally (port 8080)
 docker-run: docker-build
-	docker run --rm -p 8080:8080 medaid-questionnaire:latest
+	docker run --rm -p 8080:8080 medaid-advisor-ui:latest
 
 # Open shell in container for debugging
 docker-shell:
-	docker run --rm -it --entrypoint sh medaid-questionnaire:latest
+	docker run --rm -it --entrypoint sh medaid-advisor-ui:latest
 
 # ---- GCP Cloud Run ----
 
 project_id := "med-aid-advisor"
 region     := "europe-west4"
-service    := "medaid-questionnaire"
-ar_repo    := "medaid-repo/medaid-questionnaire"
+service    := "medaid-advisor-ui"
+ar_repo    := "medaid-repo/medaid-advisor-ui"
 ar_host    := region + "-docker.pkg.dev"
 
 # Build (linux/amd64) and push to Artifact Registry
@@ -80,25 +86,18 @@ docker-push: build
 	docker push {{ar_host}}/{{project_id}}/{{ar_repo}}:latest
 
 # Deploy to Cloud Run
-cloudrun-deploy:
+deploy: docker-push
 	gcloud run deploy {{service}} \
-		--image {{ar_host}}/{{project_id}}/{{ar_repo}}:latest \
-		--region {{region}} \
-		--project {{project_id}} \
+		--image={{ar_host}}/{{project_id}}/{{ar_repo}}:latest \
+		--region={{region}} \
+		--platform=managed \
+		--port=8080 \
 		--allow-unauthenticated \
-		--cpu 1 \
-		--memory 512Mi
+		--project={{project_id}}
 
-# ---- shadcn/ui ----
+# Full build + deploy pipeline
+ship: deploy
 
-# Add a shadcn/ui component
-add-component component:
-	npx shadcn add {{component}}
-
-# ---- Combos ----
-
-# Full CI: lint + typecheck + build
-check: lint typecheck build
-
-# Full release pipeline: check + push + deploy
-release: check docker-push cloudrun-deploy
+# View recent Cloud Run revisions
+revisions:
+	gcloud run revisions list --service={{service}} --region={{region}} --project={{project_id}}

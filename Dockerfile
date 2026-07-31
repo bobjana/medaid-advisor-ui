@@ -1,32 +1,47 @@
-# Multi-stage build for optimal image size
-# Stage 1: Build the React app
-FROM node:20-alpine AS builder
+# Multi-stage Dockerfile for Next.js 16 (App Router)
+# Uses Next.js `output: 'standalone'` to produce a minimal runtime image.
 
+# ---- Dependencies ----
+FROM node:20-alpine AS deps
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
-
-# Install dependencies
+# Install dependencies based on the preferred package manager
+COPY package.json package-lock.json* ./
 RUN npm ci
 
-# Copy source code
+# ---- Builder ----
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Clean any existing build artifacts and build
-RUN rm -rf dist node_modules/.vite && npm run build
+# Disable telemetry during build
+ENV NEXT_TELEMETRY_DISABLED=1
 
-# Stage 2: Serve with nginx
-FROM nginx:alpine
+RUN npm run build
 
-# Copy built assets from builder stage
-COPY --from=builder /app/dist /usr/share/nginx/html
+# ---- Runner ----
+FROM node:20-alpine AS runner
+WORKDIR /app
 
-# Copy nginx configuration
-COPY nginx.conf /etc/nginx/nginx.conf
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=8080
+ENV HOSTNAME=0.0.0.0
 
-# Expose port
+# Create non-root user
+RUN addgroup --system --gid 1001 nodejs \
+  && adduser --system --uid 1001 nextjs
+
+# Copy the standalone server output
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+# Static assets and public/ must be copied manually per Next.js docs
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+
+USER nextjs
+
 EXPOSE 8080
 
-# Start nginx
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["node", "server.js"]

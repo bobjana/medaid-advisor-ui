@@ -9,8 +9,8 @@ on:
 env:
   PROJECT_ID: med-aid-advisor
   REGION: europe-west4
-  SERVICE_NAME: medaid-questionnaire
-  IMAGE_NAME: medaid-repo/medaid-questionnaire
+  SERVICE_NAME: medaid-advisor-ui
+  IMAGE_NAME: medaid-repo/medaid-advisor-ui
   ARTIFACT_REGISTRY: europe-west4-docker.pkg.dev
 
 jobs:
