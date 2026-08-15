@@ -5,8 +5,7 @@ import { Send, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { sendMessage } from '@/lib/api';
-import type { ChatRequest, ChatResponse } from '@/types';
+import { streamMessage } from '@/lib/api';
 
 interface Message {
   id: string;
@@ -29,6 +28,9 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Reserved for when the server emits a session id — plumbed, not used this PR.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const sessionIdRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -51,16 +53,24 @@ export default function ChatPage() {
     setError(null);
     setLoading(true);
 
+    const assistantId = `assistant-${Date.now()}`;
+    setMessages((prev) => [
+      ...prev,
+      { id: assistantId, role: 'assistant', content: '', timestamp: Date.now() },
+    ]);
+
     try {
-      const request: ChatRequest = { message: trimmed };
-      const response: ChatResponse = await sendMessage(request);
-      const assistantMessage: Message = {
-        id: `assistant-${Date.now()}`,
-        role: 'assistant',
-        content: response.response,
-        timestamp: Date.now(),
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
+      const stream = await streamMessage({ message: trimmed });
+      const reader = stream.getReader();
+      let acc = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        acc += value;
+        setMessages((prev) =>
+          prev.map((m) => (m.id === assistantId ? { ...m, content: acc } : m)),
+        );
+      }
     } catch (err) {
       const message =
         err instanceof Error
