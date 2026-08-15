@@ -62,4 +62,5 @@ jobs:
             --platform=managed \
             --port=8080 \
             --allow-unauthenticated \
+            --set-env-vars=VERTEX_PROJECT=${{ env.PROJECT_ID }},VERTEX_REGION=us-central1,AGENT_ENGINE_ID=6873004854030106624,DEMO_USERNAME=advisor,DEMO_PASSWORD=medaid-demo-2024,SESSION_SECRET=${{ secrets.SESSION_SECRET }} \
             --project=${{ env.PROJECT_ID }}
