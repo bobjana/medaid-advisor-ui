@@ -57,26 +57,6 @@ const actions: ActionCard[] = [
 export default function DashboardPage() {
   return (
     <div className="space-y-12 pb-16">
-      <header className="grid md:grid-cols-12 gap-8 items-end pt-4">
-        <div className="md:col-span-7 space-y-4">
-          <p className="text-[11px] uppercase tracking-[0.22em] text-primary font-semibold">
-            Editorial Care Workspace
-          </p>
-          <h2 className="editorial-display text-4xl md:text-5xl text-foreground leading-[1.05]">
-            Curated medical aid,
-            <br />
-            considered in detail.
-          </h2>
-        </div>
-        <div className="md:col-span-5 md:pl-8 md:border-l md:border-outline-variant/30">
-          <p className="text-base text-muted-foreground leading-relaxed">
-            A calm, structured workspace for advisors. Begin with a needs
-            assessment, converse with the assistant, or generate a broker
-            recommendation from client data.
-          </p>
-        </div>
-      </header>
-
       <section className="grid gap-6 md:grid-cols-3">
         {actions.map((action) => {
           const Icon = action.icon;

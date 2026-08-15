@@ -200,11 +200,6 @@ a {
     -webkit-backdrop-filter: blur(24px) saturate(180%);
 }
 
-.editorial-display {
-    letter-spacing: -0.025em;
-    font-weight: 800;
-}
-
 .ghost-border {
     border: 1px solid oklch(82% 0.018 257 / 0.15);
 }

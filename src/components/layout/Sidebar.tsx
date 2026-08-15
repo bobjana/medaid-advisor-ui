@@ -98,18 +98,6 @@ export function Sidebar() {
           </button>
         </div>
 
-        {!collapsed && (
-          <div className="px-4 mb-6">
-            <Link
-              href="/chat"
-              className="w-full py-3 px-4 bg-primary text-primary-foreground rounded-xl font-semibold flex items-center justify-center gap-2 hover:opacity-95 active:scale-[0.98] transition-all shadow-sm"
-            >
-              <MessageSquare className="w-4 h-4" strokeWidth={2.5} />
-              New Conversation
-            </Link>
-          </div>
-        )}
-
         <nav className="flex-1 overflow-y-auto px-2 space-y-1">
           {navItems.map((item) => {
             const Icon = item.icon;

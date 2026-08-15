@@ -1,4 +1,4 @@
-import { Target, ArrowLeft, Sparkles, Upload, FileSearch, ClipboardCheck, ShieldCheck, CheckCircle2, ChevronRight } from 'lucide-react';
+import { Target, Sparkles, Upload, FileSearch, ClipboardCheck, ShieldCheck, CheckCircle2, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import {
   Card,
@@ -11,14 +11,6 @@ import {
 export default function RecommendPage() {
   return (
     <div className="max-w-3xl mx-auto px-4 py-16 space-y-8">
-      <Link
-        href="/chat"
-        className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
-      >
-        <ArrowLeft className="w-4 h-4 mr-1.5" />
-        Back to Chat
-      </Link>
-
       <Card className="bg-card rounded-2xl border-outline-variant/30 overflow-hidden shadow-sm">
         <div className="h-2 bg-gradient-to-r from-emerald-400 via-teal-500 to-cyan-500" />
 
