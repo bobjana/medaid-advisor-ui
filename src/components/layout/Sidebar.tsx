@@ -14,7 +14,6 @@ import {
   Menu,
   X,
   Stethoscope,
-  Plus,
 } from 'lucide-react';
 
 interface NavItem {
@@ -30,7 +29,6 @@ const navItems: NavItem[] = [
     href: '/questionnaire',
     label: 'Questionnaire',
     icon: ClipboardList,
-    external: true,
   },
   { href: '/chat', label: 'Chat', icon: MessageSquare },
   { href: '/recommend', label: 'Recommend', icon: Target },
@@ -103,13 +101,11 @@ export function Sidebar() {
         {!collapsed && (
           <div className="px-4 mb-6">
             <Link
-              href="/questionnaire"
-              target="_blank"
-              rel="noopener noreferrer"
+              href="/chat"
               className="w-full py-3 px-4 bg-primary text-primary-foreground rounded-xl font-semibold flex items-center justify-center gap-2 hover:opacity-95 active:scale-[0.98] transition-all shadow-sm"
             >
-              <Plus className="w-4 h-4" strokeWidth={2.5} />
-              New Consultation
+              <MessageSquare className="w-4 h-4" strokeWidth={2.5} />
+              New Conversation
             </Link>
           </div>
         )}
