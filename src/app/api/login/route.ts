@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
   const signature = signSession(payload, SESSION_SECRET);
   const cookieValue = `${payload}.${signature}`;
 
-  const response = NextResponse.redirect(new URL('/chat', req.url));
+  const response = NextResponse.redirect(new URL('/', req.url));
   response.cookies.set(SESSION_COOKIE, cookieValue, {
     httpOnly: true,
     sameSite: 'lax',
