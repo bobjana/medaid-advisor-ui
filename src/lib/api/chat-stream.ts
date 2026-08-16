@@ -1,7 +1,11 @@
-import type { ChatRequest } from '@/types';
+import type { ChatEvent, ChatRequest } from '@/types';
 import { streamAgentQuery } from './vertex/stream';
 
 const encoder = new TextEncoder();
+
+function enqueue(controller: ReadableStreamDefaultController<Uint8Array>, event: ChatEvent): void {
+  controller.enqueue(encoder.encode(JSON.stringify(event) + '\n'));
+}
 
 export function streamChat(req: ChatRequest, userId: string): ReadableStream<Uint8Array> {
   return new ReadableStream<Uint8Array>({
@@ -13,20 +17,25 @@ export function streamChat(req: ChatRequest, userId: string): ReadableStream<Uin
           sessionId: req.sessionId,
         })) {
           if (ev.type === 'text') {
-            controller.enqueue(encoder.encode(ev.delta));
+            enqueue(controller, { type: 'text', delta: ev.delta });
+          } else if (ev.type === 'citations') {
+            enqueue(controller, { type: 'citations', citations: ev.citations });
+          } else if (ev.type === 'session') {
+            enqueue(controller, { type: 'session', sessionId: ev.sessionId });
           } else if (ev.type === 'error') {
-            controller.enqueue(encoder.encode(`\n[error] ${ev.message}`));
+            enqueue(controller, { type: 'error', message: ev.message });
             controller.close();
             return;
           } else if (ev.type === 'done') {
+            enqueue(controller, { type: 'done' });
             controller.close();
             return;
           }
-          // 'session' currently unused by the page — pass through for future use
         }
+        enqueue(controller, { type: 'done' });
         controller.close();
       } catch (err) {
-        controller.enqueue(encoder.encode(`\n[error] ${(err as Error).message}`));
+        enqueue(controller, { type: 'error', message: (err as Error).message });
         controller.close();
       }
     },

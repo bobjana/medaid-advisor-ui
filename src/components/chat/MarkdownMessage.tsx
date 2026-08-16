@@ -59,7 +59,7 @@ export function MarkdownMessage({ content, className = '' }: MarkdownMessageProp
  */
 function renderFormattedInline(text: string): React.ReactNode[] {
   const parts: React.ReactNode[] = [];
-  const regex = /(\*\*.*?\*\*|`.*?`)/g;
+  const regex = /(\*\*.*?\*\*|`.*?`|\[[^\]]*\]\([^)]*\))/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
@@ -86,6 +86,21 @@ function renderFormattedInline(text: string): React.ReactNode[] {
           {codeText}
         </code>
       );
+    } else if (token.startsWith('[')) {
+      const linkMatch = /^\[([^\]]*)\]\(([^)]*)\)$/.exec(token);
+      if (linkMatch) {
+        parts.push(
+          <a
+            key={`link-${match.index}`}
+            href={linkMatch[2]}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary underline decoration-primary/40 underline-offset-2 hover:decoration-primary"
+          >
+            {linkMatch[1]}
+          </a>
+        );
+      }
     }
 
     lastIndex = regex.lastIndex;

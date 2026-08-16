@@ -227,3 +227,60 @@ describe('streamAgentQuery error handling', () => {
     expect((events[0] as { message: string }).message).toContain('200');
   });
 });
+
+describe('streamAgentQuery citation extraction', () => {
+  it('extracts citations from a function_response result', async () => {
+    const result =
+      '[Excerpt 1]\nSource: discovery-keycare-plan-guide.pdf\n' +
+      'Source URI: gs://bucket/plans/discovery-keycare-plan-guide.pdf\n' +
+      'Download: https://host/download?uri=gs%3A%2F%2Fbucket%2Fplans%2Fdiscovery-keycare-plan-guide.pdf\n\n' +
+      'Unlimited hospital cover in KeyCare networks.';
+    const line = JSON.stringify({
+      content: { parts: [{ function_response: { name: 'search_discovery_benefits', response: { result } } }] },
+    });
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(line + '\n'));
+        controller.close();
+      },
+    });
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: 'OK', body: stream });
+
+    const events = await collectEvents();
+
+    const citationEvents = events.filter((e) => e.type === 'citations');
+    expect(citationEvents).toHaveLength(1);
+    expect(citationEvents[0]).toEqual({
+      type: 'citations',
+      citations: [
+        {
+          title: 'discovery-keycare-plan-guide.pdf',
+          uri: 'gs://bucket/plans/discovery-keycare-plan-guide.pdf',
+          url: 'https://host/download?uri=gs%3A%2F%2Fbucket%2Fplans%2Fdiscovery-keycare-plan-guide.pdf',
+        },
+      ],
+    });
+  });
+
+  it('deduplicates repeated citation URLs', async () => {
+    const block =
+      'Source: plan.pdf\nSource URI: gs://b/plan.pdf\nDownload: https://host/d?uri=x\n\n';
+    const result = block + '---\n' + block;
+    const line = JSON.stringify({
+      content: { parts: [{ function_response: { response: { result } } }] },
+    });
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(line + '\n'));
+        controller.close();
+      },
+    });
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: 'OK', body: stream });
+
+    const events = await collectEvents();
+
+    const citationEvents = events.filter((e) => e.type === 'citations');
+    expect(citationEvents).toHaveLength(1);
+    expect((citationEvents[0] as { citations: unknown[] }).citations).toHaveLength(1);
+  });
+});

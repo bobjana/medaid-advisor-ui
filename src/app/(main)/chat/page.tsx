@@ -5,13 +5,16 @@ import { Send, Loader2, Sparkles, Stethoscope, MessageSquare } from 'lucide-reac
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import type { Citation } from '@/types';
 import { streamMessage } from '@/lib/api';
 import { MarkdownMessage } from '@/components/chat/MarkdownMessage';
+import { Citations } from '@/components/chat/Citations';
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  citations?: Citation[];
 }
 
 const WELCOME_MESSAGE: Message = {
@@ -64,16 +67,23 @@ export default function ChatPage() {
     ]);
 
     try {
-      const stream = await streamMessage({ message: trimmed });
-      const reader = stream.getReader();
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantId ? { ...m, content: m.content + value } : m,
-          ),
-        );
+      const stream = streamMessage({ message: trimmed });
+      for await (const event of stream) {
+        if (event.type === 'text') {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId ? { ...m, content: m.content + event.delta } : m,
+            ),
+          );
+        } else if (event.type === 'citations') {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId ? { ...m, citations: event.citations } : m,
+            ),
+          );
+        } else if (event.type === 'error') {
+          setError(event.message);
+        }
       }
     } catch (err) {
       const message =
@@ -137,7 +147,10 @@ export default function ChatPage() {
                 }`}
               >
                 {message.role === 'assistant' ? (
-                  <MarkdownMessage content={message.content} />
+                  <>
+                    <MarkdownMessage content={message.content} />
+                    <Citations citations={message.citations ?? []} />
+                  </>
                 ) : (
                   <p className="text-sm leading-relaxed whitespace-pre-wrap">
                     {message.content}

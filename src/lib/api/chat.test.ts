@@ -1,27 +1,38 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { streamMessage } from './chat';
+import type { ChatEvent, ChatRequest } from '@/types';
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('streamMessage', () => {
-  it('POSTs to /api/chat with message and x-user-id header, returns a string stream', async () => {
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(encoder.encode('hello'));
-        controller.close();
-      },
-    });
+function ndjsonStream(lines: string[]): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(lines.join('\n') + '\n'));
+      controller.close();
+    },
+  });
+}
 
+async function collectEvents(req: ChatRequest): Promise<ChatEvent[]> {
+  const events: ChatEvent[] = [];
+  for await (const ev of streamMessage(req)) events.push(ev);
+  return events;
+}
+
+describe('streamMessage', () => {
+  it('POSTs to /api/chat and parses NDJSON events', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      body: stream,
+      body: ndjsonStream([
+        JSON.stringify({ type: 'text', delta: 'hello' }),
+        JSON.stringify({ type: 'done' }),
+      ]),
     });
     globalThis.fetch = fetchMock;
 
-    const result = await streamMessage({ message: 'hello' });
+    const events = await collectEvents({ message: 'hello' });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
@@ -31,28 +42,20 @@ describe('streamMessage', () => {
     expect(init.headers['x-user-id']).toBeDefined();
     expect(JSON.parse(init.body)).toEqual({ message: 'hello' });
 
-    const reader = result.getReader();
-    const chunks: string[] = [];
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-    }
-    expect(chunks.join('')).toBe('hello');
+    expect(events).toEqual([
+      { type: 'text', delta: 'hello' },
+      { type: 'done' },
+    ]);
   });
 
   it('forwards the sessionId in the request body', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      body: new ReadableStream({
-        start(controller) {
-          controller.close();
-        },
-      }),
+      body: ndjsonStream([]),
     });
     globalThis.fetch = fetchMock;
 
-    await streamMessage({ message: 'follow up', sessionId: 's-1' });
+    await collectEvents({ message: 'follow up', sessionId: 's-1' });
 
     const [, init] = fetchMock.mock.calls[0];
     expect(JSON.parse(init.body)).toEqual({ message: 'follow up', sessionId: 's-1' });
@@ -65,6 +68,29 @@ describe('streamMessage', () => {
       body: null,
     });
 
-    await expect(streamMessage({ message: 'test' })).rejects.toThrow('Chat failed: 500');
+    const gen = streamMessage({ message: 'test' });
+    await expect(gen.next()).rejects.toThrow('Chat failed: 500');
+  });
+
+  it('parses citation events', async () => {
+    const citation = {
+      title: 'plan.pdf',
+      url: 'https://host/download?uri=gs%3A%2F%2Fb%2Fplan.pdf',
+      uri: 'gs://b/plan.pdf',
+    };
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      body: ndjsonStream([
+        JSON.stringify({ type: 'citations', citations: [citation] }),
+        JSON.stringify({ type: 'done' }),
+      ]),
+    });
+
+    const events = await collectEvents({ message: 'hello' });
+
+    expect(events).toEqual([
+      { type: 'citations', citations: [citation] },
+      { type: 'done' },
+    ]);
   });
 });
