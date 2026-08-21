@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
+import { publicUrl } from '@/lib/request';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
   try {
     formData = await req.formData();
   } catch {
-    return NextResponse.redirect(new URL('/login?error=1', req.url));
+    return NextResponse.redirect(publicUrl(req, '/login?error=1'));
   }
 
   const username = formData.get('username');
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
     username !== DEMO_USERNAME ||
     password !== DEMO_PASSWORD
   ) {
-    return NextResponse.redirect(new URL('/login?error=1', req.url));
+    return NextResponse.redirect(publicUrl(req, '/login?error=1'));
   }
 
   const exp = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS;
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest) {
   const signature = signSession(payload, SESSION_SECRET);
   const cookieValue = `${payload}.${signature}`;
 
-  const response = NextResponse.redirect(new URL('/', req.url));
+  const response = NextResponse.redirect(publicUrl(req, '/'));
   response.cookies.set(SESSION_COOKIE, cookieValue, {
     httpOnly: true,
     sameSite: 'lax',
