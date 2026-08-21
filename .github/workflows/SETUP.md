@@ -54,31 +54,21 @@ gcloud iam workload-identity-pools create github-pool \
   --location=global \
   --display-name="GitHub Actions Pool"
 
-# Create the workload identity provider
-gcloud iam workload-identity-pools providers create github-pool/github-provider \
+# Create the OIDC workload identity provider (GitHub Actions OIDC)
+gcloud iam workload-identity-pools providers create-oidc github-provider-ui \
   --project=med-aid-advisor \
   --location=global \
   --workload-identity-pool=github-pool \
-  --display-name="GitHub Provider" \
-  --issuer-uri="https://token.actions.githubusercontent.com"
+  --display-name="GitHub OIDC (UI)" \
+  --issuer-uri="https://token.actions.githubusercontent.com" \
+  --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.actor=assertion.actor" \
+  --attribute-condition="assertion.repository=='bobjana/medaid-advisor-ui'"
 
-# Attribute mapping (maps GitHub repo to GCP service account)
-gcloud iam workload-identity-pools providers create-attribute-condition github-pool/github-provider \
-  --project=med-aid-advisor \
-  --location=global \
-  --workload-identity-pool=github-pool \
-  --provider=github-provider \
-  --attribute="attribute.repository/owner" \
-  --value="<YOUR_GITHUB_USERNAME>"
-
-# Allow GitHub OIDC provider to impersonate the service account
+# Allow the UI repo's GitHub Actions to impersonate the deploy service account
 gcloud iam service-accounts add-iam-policy-binding github-actions-deployer@med-aid-advisor.iam.gserviceaccount.com \
   --project=med-aid-advisor \
   --role="roles/iam.workloadIdentityUser" \
-  --member="principalSet://iam.googleapis.com/projects/med-aid-advisor/locations/global/workloadIdentityPools/github-pool/providers/github-provider"
-
-# IMPORTANT: Replace <YOUR_GITHUB_USERNAME> with your actual GitHub username
-# The attribute condition ensures only your GitHub repositories can use this provider
+  --member="principalSet://iam.googleapis.com/projects/84640843558/locations/global/workloadIdentityPools/github-pool/attribute.repository/bobjana/medaid-advisor-ui"
 ```
 
 #### Step 4: Configure GitHub Secrets
@@ -87,9 +77,9 @@ Add the following secrets to your GitHub repository (Settings → Secrets and va
 
 | Secret Name | Value | Description |
 |-------------|-------|-------------|
-| `WIF_PROVIDER` | `projects/med-aid-advisor/locations/global/workloadIdentityPools/github-pool/providers/github-provider` | Full provider resource name |
-| `WIF_POOL` | `projects/med-aid-advisor/locations/global/workloadIdentityPools/github-pool` | Full pool resource name |
+| `WIF_PROVIDER` | `projects/84640843558/locations/global/workloadIdentityPools/github-pool/providers/github-provider-ui` | Full WIF provider resource name (Step 3) |
 | `GCP_SERVICE_ACCOUNT_EMAIL` | `github-actions-deployer@med-aid-advisor.iam.gserviceaccount.com` | Service account email from Step 1 |
+| `SESSION_SECRET` | `$(openssl rand -hex 32)` | Random 64-char string; signs session cookies |
 
 ### 2. GitHub Repository Settings
 
@@ -120,7 +110,7 @@ You can also trigger a deployment manually:
 
 ## Deployment URLs
 
-- **Service URL**: https://medaid-questionnaire-84640843558.europe-west4.run.app
+- **Service URL**: https://medaid-advisor-ui-84640843558.europe-west4.run.app
 - **GCP Console**: https://console.cloud.google.com/run?project=med-aid-advisor
 
 ## Troubleshooting
@@ -139,47 +129,3 @@ You can also trigger a deployment manually:
 - Verify Cloud Run API is enabled
 - Check service exists and is healthy
 - Review deployment logs in GCP Console
-
-
----
-
-## Alternative: Simple Authentication (Service Account Key)
-
-If you prefer a simpler setup without Workload Identity Federation, you can use the `deploy-cloudrun-simple.yml` workflow:
-
-### Step 1: Create Service Account Key
-
-```bash
-# Create a service account if you haven't already
-gcloud iam service-accounts create github-actions-deployer \
-  --display-name="GitHub Actions Deployer" \
-  --project=med-aid-advisor
-
-# Grant required roles
-gcloud projects add-iam-policy-binding med-aid-advisor \
-  --member="serviceAccount:github-actions-deployer@med-aid-advisor.iam.gserviceaccount.com" \
-  --role="roles/cloudbuild.builds.builder"
-
-gcloud projects add-iam-policy-binding med-aid-advisor \
-  --member="serviceAccount:github-actions-deployer@med-aid-advisor.iam.gserviceaccount.com" \
-  --role="roles/run.developer"
-
-gcloud projects add-iam-policy-binding med-aid-advisor \
-  --member="serviceAccount:github-actions-deployer@med-aid-advisor.iam.gserviceaccount.com" \
-  --role="roles/artifactregistry.writer"
-
-# Create and download the service account key
-gcloud iam service-accounts keys create github-actions-key.json \
-  --iam-account=github-actions-deployer@med-aid-advisor.iam.gserviceaccount.com \
-  --project=med-aid-advisor
-```
-
-### Step 2: Add GitHub Secret
-
-Add the following secret to your GitHub repository:
-
-| Secret Name | Value | Description |
-|-------------|-------|-------------|
-| `GCP_CREDENTIALS` | `<contents of github-actions-key.json>` | Full JSON content of the service account key |
-
-**⚠️ Security Note**: The simple authentication method stores service account credentials in GitHub secrets. For better security, consider using Workload Identity Federation (see above).
