@@ -43,6 +43,16 @@ gcloud projects add-iam-policy-binding med-aid-advisor \
 gcloud projects add-iam-policy-binding med-aid-advisor \
   --member="serviceAccount:github-actions-deployer@med-aid-advisor.iam.gserviceaccount.com" \
   --role="roles/iam.serviceAccountUser"
+
+# Needed to set --allow-unauthenticated (grants run.invoker to allUsers)
+gcloud projects add-iam-policy-binding med-aid-advisor \
+  --member="serviceAccount:github-actions-deployer@med-aid-advisor.iam.gserviceaccount.com" \
+  --role="roles/run.admin"
+
+# Let Cloud Run's service agent pull images from Artifact Registry
+gcloud projects add-iam-policy-binding med-aid-advisor \
+  --member="serviceAccount:service-84640843558@serverless-robot-prod.iam.gserviceaccount.com" \
+  --role="roles/artifactregistry.reader"
 ```
 
 #### Step 3: Create Workload Identity Pool and Provider
