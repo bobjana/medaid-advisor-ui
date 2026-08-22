@@ -23,7 +23,7 @@ function LoginForm() {
 
   function fillDemoAccount() {
     setUsername('advisor');
-    setPassword('medaid-demo-2024');
+    setPassword('advisor');
   }
 
   return (

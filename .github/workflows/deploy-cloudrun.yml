@@ -8,10 +8,10 @@ on:
 
 env:
   PROJECT_ID: med-aid-advisor
-  REGION: europe-west4
+  REGION: africa-south1
   SERVICE_NAME: medaid-advisor-ui
   IMAGE_NAME: medaid-repo/medaid-advisor-ui
-  ARTIFACT_REGISTRY: europe-west4-docker.pkg.dev
+  ARTIFACT_REGISTRY: africa-south1-docker.pkg.dev
 
 jobs:
   deploy:
@@ -60,5 +60,5 @@ jobs:
             --platform=managed \
             --port=8080 \
             --allow-unauthenticated \
-            --set-env-vars=VERTEX_PROJECT=${{ env.PROJECT_ID }},VERTEX_REGION=us-central1,AGENT_ENGINE_ID=6873004854030106624,DEMO_USERNAME=advisor,DEMO_PASSWORD=medaid-demo-2024,SESSION_SECRET=${{ secrets.SESSION_SECRET }} \
+            --set-env-vars=VERTEX_PROJECT=${{ env.PROJECT_ID }},VERTEX_REGION=us-central1,AGENT_ENGINE_ID=6873004854030106624,DEMO_USERNAME=advisor,DEMO_PASSWORD=advisor,SESSION_SECRET=${{ secrets.SESSION_SECRET }} \
             --project=${{ env.PROJECT_ID }}

@@ -1,5 +1,5 @@
 import { cookies } from 'next/headers';
-import { Sidebar, Header } from '@/components/layout';
+import { Sidebar } from '@/components/layout';
 
 function decodeSessionUsername(session: string | undefined): string | null {
   if (!session) return null;
@@ -27,9 +27,8 @@ export default async function MainLayout({
 
   return (
     <div className="flex min-h-screen">
-      <Sidebar />
+      <Sidebar username={username} />
       <div className="flex-1 flex flex-col min-w-0">
-        <Header username={username} />
         <main className="flex-1 p-4 md:p-6">{children}</main>
       </div>
     </div>

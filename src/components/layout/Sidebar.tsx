@@ -15,6 +15,7 @@ import {
   X,
   Stethoscope,
 } from 'lucide-react';
+import { UserMenu } from './UserMenu';
 
 interface NavItem {
   href: string;
@@ -33,8 +34,11 @@ const navItems: NavItem[] = [
   { href: '/chat', label: 'Chat', icon: MessageSquare },
   { href: '/recommend', label: 'Recommend', icon: Target },
 ];
+interface SidebarProps {
+  username: string | null;
+}
 
-export function Sidebar() {
+export function Sidebar({ username }: SidebarProps) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -136,19 +140,22 @@ export function Sidebar() {
           })}
         </nav>
 
-        <div className="hidden md:flex items-center justify-end px-4 pt-2">
-          <button
-            type="button"
-            onClick={() => setCollapsed((c) => !c)}
-            className="p-1.5 rounded-md hover:bg-sidebar-accent text-muted-foreground"
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            {collapsed ? (
-              <ChevronRight className="w-4 h-4" />
-            ) : (
-              <ChevronLeft className="w-4 h-4" />
-            )}
-          </button>
+        <div className="border-t border-outline-variant/20 px-2 pt-2 pb-1 space-y-1">
+          <UserMenu username={username} collapsed={collapsed} />
+          <div className="hidden md:flex items-center justify-end px-2">
+            <button
+              type="button"
+              onClick={() => setCollapsed((c) => !c)}
+              className="p-1.5 rounded-md hover:bg-sidebar-accent text-muted-foreground"
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {collapsed ? (
+                <ChevronRight className="w-4 h-4" />
+              ) : (
+                <ChevronLeft className="w-4 h-4" />
+              )}
+            </button>
+          </div>
         </div>
       </aside>
     </>

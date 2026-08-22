@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, FormEvent } from 'react';
-import { Send, Loader2, Sparkles, Stethoscope, MessageSquare } from 'lucide-react';
+import { Send, Loader2, Sparkles, Stethoscope } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -24,12 +24,6 @@ const WELCOME_MESSAGE: Message = {
     'Hello! I can help you understand medical aid plans, benefits, and coverage options. What would you like to know?',
 };
 
-const PROMPT_SUGGESTIONS = [
-  '🏥 Compare Discovery Comprehensive vs Classic Saver',
-  '👶 Which medical aid plans offer full maternity coverage?',
-  '💊 What plans provide 100% chronic medication benefits?',
-  '📊 Explain gap cover vs main medical aid plan benefits',
-];
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
@@ -104,15 +98,15 @@ export default function ChatPage() {
   const canSend = input.trim().length > 0 && !loading;
 
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)]">
+    <div className="flex flex-col h-[calc(100vh-2rem)] md:h-[calc(100vh-3rem)]">
       <Card className="flex-1 flex flex-col border-outline-variant/30 shadow-sm rounded-2xl overflow-hidden">
-        <CardHeader className="border-b bg-surface-container-lowest/80 backdrop-blur-md px-6 py-4 flex flex-row items-center justify-between">
+        <CardHeader className="border-b bg-surface-container-lowest/80 backdrop-blur-md px-4 py-2 pb-2! flex flex-row items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shadow-xs">
-              <Stethoscope className="w-5 h-5" strokeWidth={2.25} />
+            <div className="w-7 h-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shadow-xs">
+              <Stethoscope className="w-4 h-4" strokeWidth={2.25} />
             </div>
             <div>
-              <CardTitle className="text-lg font-bold tracking-tight text-foreground">
+              <CardTitle className="text-base font-bold tracking-tight text-foreground">
                 Medical Aid Advisor Chat
               </CardTitle>
               <p className="text-xs text-muted-foreground">
@@ -175,25 +169,7 @@ export default function ChatPage() {
           <div ref={messagesEndRef} />
         </CardContent>
 
-        <div className="border-t bg-card/90 backdrop-blur-md p-4 space-y-3">
-          {/* Prompt Suggestions */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-            <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold shrink-0 flex items-center gap-1">
-              <MessageSquare className="w-3 h-3 text-primary" /> Suggestions:
-            </span>
-            {PROMPT_SUGGESTIONS.map((suggestion) => (
-              <button
-                key={suggestion}
-                type="button"
-                onClick={() => sendMessage(suggestion)}
-                disabled={loading}
-                className="text-xs px-3 py-1.5 rounded-full bg-surface-container-low border border-outline-variant/30 hover:border-primary/40 hover:bg-primary/5 text-foreground transition-all duration-150 shrink-0 font-medium active:scale-95 disabled:opacity-50"
-              >
-                {suggestion}
-              </button>
-            ))}
-          </div>
-
+        <div className="border-t bg-card/90 backdrop-blur-md p-4">
           <form onSubmit={handleSend} className="flex gap-2 items-end">
             <Textarea
               value={input}
