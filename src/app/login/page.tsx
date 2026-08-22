@@ -45,17 +45,19 @@ function LoginForm() {
           </CardDescription>
         </div>
 
-        {/* Quick Demo Fill Badge */}
-        <div className="pt-1">
-          <button
-            type="button"
-            onClick={fillDemoAccount}
-            className="w-full py-2 px-3 rounded-xl bg-primary/5 hover:bg-primary/10 border border-primary/20 text-xs font-semibold text-primary flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            Auto-Fill Demo Credentials (advisor)
-          </button>
-        </div>
+        {/* Quick Demo Fill Badge — development only */}
+        {process.env.NODE_ENV !== 'production' && (
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={fillDemoAccount}
+              className="w-full py-2 px-3 rounded-xl bg-primary/5 hover:bg-primary/10 border border-primary/20 text-xs font-semibold text-primary flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Auto-Fill Demo Credentials (advisor)
+            </button>
+          </div>
+        )}
       </CardHeader>
 
       <CardContent className="space-y-5 pb-8">
