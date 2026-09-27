@@ -1,7 +1,7 @@
 import { getLocalBackendUrl } from '../backend';
 import { randomUUID } from '@/lib/utils';
-import { createLocalSession, getAdkAppName } from './client';
-import { extractCitations, extractContextOptions, extractText } from './parse';
+import { createLocalSession } from './client';
+import { extractCitations, extractContextOptions, extractError, extractText } from './parse';
 import type { AgentEvent } from './events';
 
 export interface AdkQueryInput {
@@ -11,6 +11,12 @@ export interface AdkQueryInput {
 }
 
 function* emitEvent(event: unknown): Generator<AgentEvent> {
+  // Runtime failures arrive in-band; surface them instead of dropping them.
+  const error = extractError(event);
+  if (error) {
+    yield { type: 'error', message: error };
+    return;
+  }
   const text = extractText(event);
   if (text) yield { type: 'text', delta: text };
   const citations = extractCitations(event);

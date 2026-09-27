@@ -300,7 +300,10 @@ export default function ChatPage() {
 
         <div className="border-t bg-surface-container-lowest/80 backdrop-blur-md p-4">
           {error && (
-            <div className="mb-2 px-3 py-1.5 text-xs text-destructive bg-destructive/10 rounded-lg">
+            <div
+              title={error}
+              className="mb-2 px-3 py-1.5 text-xs text-destructive bg-destructive/10 rounded-lg whitespace-pre-wrap break-words max-h-32 overflow-y-auto"
+            >
               {error}
             </div>
           )}

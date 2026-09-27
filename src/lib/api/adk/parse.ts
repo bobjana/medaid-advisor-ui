@@ -1,5 +1,46 @@
 import type { Citation, ContextOptions, PlanOption, SchemeOption } from '@/types';
 
+/**
+ * Extract an in-band error from a backend stream event.
+ *
+ * Agent Engine / ADK report runtime failures *inside* the stream (with an
+ * HTTP 200), e.g. when the configured model is unavailable:
+ *
+ *     {"error_code":"ClientError","error_message":"404 NOT_FOUND. ..."}
+ *
+ * Without this the event is silently dropped and the UI renders an empty
+ * assistant bubble forever.
+ */
+export function extractError(event: unknown): string | null {
+  if (!event || typeof event !== 'object') return null;
+  const obj = event as { error_code?: unknown; error_message?: unknown; error?: unknown };
+
+  // ADK runtime error event: { error_code, error_message }
+  if (typeof obj.error_message === 'string' && obj.error_message.trim()) {
+    const code =
+      typeof obj.error_code === 'string' && obj.error_code.trim() ? obj.error_code : undefined;
+    return code ? `${code}: ${obj.error_message.trim()}` : obj.error_message.trim();
+  }
+
+  // API error envelope: { error: { code, message } } or { error: "message" }
+  const err = obj.error;
+  if (typeof err === 'string' && err.trim()) return err.trim();
+  if (err && typeof err === 'object') {
+    const e = err as { code?: unknown; message?: unknown; status?: unknown };
+    if (typeof e.message === 'string' && e.message.trim()) {
+      const code =
+        typeof e.code === 'string' || typeof e.code === 'number'
+          ? String(e.code)
+          : typeof e.status === 'string'
+            ? e.status
+            : undefined;
+      return code ? `${code}: ${e.message.trim()}` : e.message.trim();
+    }
+  }
+
+  return null;
+}
+
 export function extractText(event: unknown): string {
   if (!event || typeof event !== 'object') return '';
   const content = (event as { content?: unknown }).content;

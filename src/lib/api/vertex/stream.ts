@@ -1,7 +1,7 @@
 import { getStreamQueryUrl } from './env';
 import { getAuthToken } from './auth';
 import { ensureSessionId } from './sessions';
-import { extractCitations, extractContextOptions, extractText } from '../adk/parse';
+import { extractCitations, extractContextOptions, extractError, extractText } from '../adk/parse';
 import type { AgentEvent } from '../adk/events';
 
 export type { AgentEvent } from '../adk/events';
@@ -15,7 +15,7 @@ export interface AgentQueryInput {
 export async function* streamAgentQuery(
   input: AgentQueryInput,
 ): AsyncGenerator<AgentEvent> {
-  let sessionId = await ensureSessionId(input.userId, input.sessionId);
+  const sessionId = await ensureSessionId(input.userId, input.sessionId);
   yield { type: 'session', sessionId };
 
   const token = await getAuthToken();
@@ -61,6 +61,8 @@ export async function* streamAgentQuery(
         if (!line.trim()) continue;
         let parsed: unknown;
         try { parsed = JSON.parse(line); } catch { continue; }
+        const error = extractError(parsed);
+        if (error) { yield { type: 'error', message: error }; continue; }
         const text = extractText(parsed);
         if (text) yield { type: 'text', delta: text };
         const citations = extractCitations(parsed);
@@ -73,12 +75,17 @@ export async function* streamAgentQuery(
     if (buffer.trim()) {
       try {
         const parsed = JSON.parse(buffer);
-        const text = extractText(parsed);
-        if (text) yield { type: 'text', delta: text };
-        const citations = extractCitations(parsed);
-        if (citations.length > 0) yield { type: 'citations', citations };
-        const options = extractContextOptions(parsed);
-        if (options) yield { type: 'context_options', options };
+        const error = extractError(parsed);
+        if (error) {
+          yield { type: 'error', message: error };
+        } else {
+          const text = extractText(parsed);
+          if (text) yield { type: 'text', delta: text };
+          const citations = extractCitations(parsed);
+          if (citations.length > 0) yield { type: 'citations', citations };
+          const options = extractContextOptions(parsed);
+          if (options) yield { type: 'context_options', options };
+        }
       } catch { /* ignore */ }
     }
   } finally {

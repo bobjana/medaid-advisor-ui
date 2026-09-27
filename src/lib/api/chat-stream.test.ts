@@ -197,6 +197,33 @@ describe('streamAgentQuery NDJSON parsing', () => {
 });
 
 describe('streamAgentQuery error handling', () => {
+  it('surfaces in-band error events (agent runtime failures) instead of dropping them', async () => {
+    const errorLine = JSON.stringify({
+      error_code: 'ClientError',
+      error_message: '404 NOT_FOUND. Publisher model not found',
+    });
+    globalThis.fetch = vi.fn().mockResolvedValue(ndjsonResponse([errorLine]));
+
+    const events = await collectEvents();
+
+    expect(events).toContainEqual({
+      type: 'error',
+      message: 'ClientError: 404 NOT_FOUND. Publisher model not found',
+    });
+    expect(events.filter((e) => e.type === 'text')).toHaveLength(0);
+    expect(events[events.length - 1]).toEqual({ type: 'done' });
+  });
+
+  it('does not flag normal content events as errors', async () => {
+    const line = JSON.stringify({ content: { parts: [{ text: 'all good' }] } });
+    globalThis.fetch = vi.fn().mockResolvedValue(ndjsonResponse([line]));
+
+    const events = await collectEvents();
+
+    expect(events.filter((e) => e.type === 'error')).toHaveLength(0);
+    expect(events.filter((e) => e.type === 'text')).toHaveLength(1);
+  });
+
   it('emits an error event on a non-OK response', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: false,
