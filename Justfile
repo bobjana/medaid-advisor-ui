@@ -105,10 +105,14 @@ docker-shell:
 # ---- GCP Cloud Run ----
 
 project_id := "med-aid-advisor"
-region     := "europe-west4"
+region     := "africa-south1"
 service    := "medaid-advisor-ui"
 ar_repo    := "medaid-repo/medaid-advisor-ui"
 ar_host    := region + "-docker.pkg.dev"
+
+# URL-encoded Logs Explorer query for this Cloud Run service
+log_filter        := 'resource.type%3D%22cloud_run_revision%22%0Aresource.labels.service_name%3D%22' + service + '%22%0Aresource.labels.location%3D%22' + region + '%22'
+log_filter_errors := log_filter + '%0Aseverity%3E%3DERROR'
 
 # Build (linux/amd64) and push to Artifact Registry
 [group('deploy')]
@@ -145,3 +149,30 @@ open:
 [group('deploy')]
 revisions:
 	gcloud run revisions list --service={{service}} --region={{region}} --project={{project_id}}
+
+# ---- GCP Console (browser) ----
+
+# Open the Cloud Run service page in the Google Cloud console
+[group('deploy')]
+console:
+	open "https://console.cloud.google.com/run/detail/{{region}}/{{service}}/metrics?project={{project_id}}"
+
+# Open the Cloud Run revisions tab in the console
+[group('deploy')]
+console-revisions:
+	open "https://console.cloud.google.com/run/detail/{{region}}/{{service}}/revisions?project={{project_id}}"
+
+# Open the project dashboard in the console
+[group('deploy')]
+console-project:
+	open "https://console.cloud.google.com/home/dashboard?project={{project_id}}"
+
+# Open Logs Explorer pre-filtered to this Cloud Run service
+[group('deploy')]
+console-logs:
+	open "https://console.cloud.google.com/logs/query;query={{log_filter}}?project={{project_id}}"
+
+# Open Logs Explorer pre-filtered to errors from this Cloud Run service
+[group('deploy')]
+console-logs-errors:
+	open "https://console.cloud.google.com/logs/query;query={{log_filter_errors}}?project={{project_id}}"
