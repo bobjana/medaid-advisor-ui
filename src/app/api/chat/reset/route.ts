@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getChatBackend } from '@/lib/api/backend';
 import { resetSessionContext } from '@/lib/api/adk/client';
+import { clearSessionContext } from '@/lib/api/vertex/sessions';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -18,12 +19,14 @@ export async function POST(req: NextRequest) {
 
   const userId = req.headers.get('x-user-id') ?? 'anonymous';
 
-  if (getChatBackend() === 'local') {
-    try {
+  try {
+    if (getChatBackend() === 'local') {
       await resetSessionContext(userId, body.sessionId);
-    } catch (err) {
-      return NextResponse.json({ error: (err as Error).message }, { status: 502 });
+    } else {
+      await clearSessionContext(body.sessionId);
     }
+  } catch (err) {
+    return NextResponse.json({ error: (err as Error).message }, { status: 502 });
   }
 
   return NextResponse.json({ ok: true });

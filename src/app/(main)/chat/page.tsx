@@ -12,22 +12,12 @@ import { MarkdownMessage } from '@/components/chat/MarkdownMessage';
 import { Citations } from '@/components/chat/Citations';
 import { ContextSelector } from '@/components/chat/ContextSelector';
 
-const SESSION_KEY = 'medaid:session-id';
 const JSON_BLOCK_RE = /```(?:json)?\s*\{[\s\S]*?"(?:schemes|plans|type)"[\s\S]*?\}\s*```/g;
 
 const SCHEME_LABELS: Record<string, string> = {
   bonitas: 'Bonitas',
   discovery: 'Discovery',
 };
-
-function getStoredSessionId(): string | undefined {
-  if (typeof window === 'undefined') return undefined;
-  return localStorage.getItem(SESSION_KEY) ?? undefined;
-}
-
-function persistSessionId(id: string): void {
-  localStorage.setItem(SESSION_KEY, id);
-}
 
 function stripContextJson(text: string): string {
   return text.replace(JSON_BLOCK_RE, '').trim();
@@ -56,7 +46,13 @@ export default function ChatPage() {
   const [contextOptions, setContextOptions] = useState<ContextOptions | null>(null);
   const [activeContext, setActiveContext] = useState<{ scheme?: string; plan?: string }>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const sessionIdRef = useRef<string | undefined>(getStoredSessionId());
+  // A page load always starts a fresh conversation: the session id is only
+  // held in this ref for the lifetime of the page (set from the backend's
+  // first `session` event). It is deliberately not persisted — restoring it
+  // on reload silently resumed an old agent session (with its selected
+  // scheme) while the transcript reset, so questions were answered for the
+  // previous scheme instead of prompting for one.
+  const sessionIdRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -134,7 +130,6 @@ export default function ChatPage() {
           );
         } else if (event.type === 'session') {
           sessionIdRef.current = event.sessionId;
-          persistSessionId(event.sessionId);
         } else if (event.type === 'context_options') {
           finalOptions = event.options;
           setContextOptions(event.options);
@@ -180,7 +175,6 @@ export default function ChatPage() {
   }
 
   function resetConversation() {
-    localStorage.removeItem(SESSION_KEY);
     sessionIdRef.current = undefined;
     setMessages([WELCOME_MESSAGE]);
     setContextOptions(null);
