@@ -56,16 +56,24 @@ export async function ensureSessionId(userId: string, existing?: string): Promis
   return createSession(userId);
 }
 
+export interface SessionContext {
+  /** Scheme slug (e.g. `bonitas`), or `null` for "all schemes". */
+  scheme: string | null;
+  /** Plan id (e.g. `boncomplete`), or `null` for scheme-wide. */
+  plan: string | null;
+}
+
 /**
- * Clear the agent's selected scheme/plan context for a session.
- *
  * Agent Engine sessions cannot be patched directly ("you can only update it
- * by appending an event"), so this appends a marker event whose state delta
- * nulls the context keys. The agent's context guard treats null as "unset"
- * and re-prompts for a scheme on the next turn. A missing session (404) is
- * treated as already-clear.
+ * by appending an event"), so context changes append an event whose state
+ * delta sets (or nulls) the scheme/plan keys. A missing session (404) is
+ * treated as a no-op.
  */
-export async function clearSessionContext(sessionId: string): Promise<void> {
+async function appendStateDelta(
+  sessionId: string,
+  stateDelta: Record<string, string | null>,
+  opts: { label: string; invocationPrefix: string },
+): Promise<void> {
   if (!isValidSessionId(sessionId)) {
     throw new Error(`Invalid session id: ${sessionId}`);
   }
@@ -80,13 +88,10 @@ export async function clearSessionContext(sessionId: string): Promise<void> {
     },
     body: JSON.stringify({
       author: 'user',
-      invocationId: `clear-context-${randomUUID()}`,
+      invocationId: `${opts.invocationPrefix}-${randomUUID()}`,
       timestamp: new Date().toISOString(),
       actions: {
-        stateDelta: {
-          selected_scheme: null,
-          selected_plan: null,
-        },
+        stateDelta,
       },
     }),
   });
@@ -94,6 +99,32 @@ export async function clearSessionContext(sessionId: string): Promise<void> {
   if (resp.ok || resp.status === 404) return;
   const detail = await resp.text().catch(() => '');
   throw new Error(
-    `ClearSessionContext failed: ${resp.status} ${resp.statusText}${detail ? ` — ${detail}` : ''}`,
+    `${opts.label} failed: ${resp.status} ${resp.statusText}${detail ? ` — ${detail}` : ''}`,
+  );
+}
+
+/** Scope the session to a scheme and/or plan. */
+export async function setSessionContext(
+  sessionId: string,
+  context: SessionContext,
+): Promise<void> {
+  await appendStateDelta(
+    sessionId,
+    { selected_scheme: context.scheme, selected_plan: context.plan },
+    { label: 'SetSessionContext', invocationPrefix: 'set-context' },
+  );
+}
+
+/**
+ * Clear the agent's selected scheme/plan context for a session.
+ *
+ * The agent's context guard treats null as "unset" and re-prompts for a scheme
+ * on the next turn.
+ */
+export async function clearSessionContext(sessionId: string): Promise<void> {
+  await appendStateDelta(
+    sessionId,
+    { selected_scheme: null, selected_plan: null },
+    { label: 'ClearSessionContext', invocationPrefix: 'clear-context' },
   );
 }

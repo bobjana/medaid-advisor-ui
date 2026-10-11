@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest';
-import { clearSessionContext } from './sessions';
+import { clearSessionContext, setSessionContext } from './sessions';
 import { setAuthProvider } from './auth';
 
 const SESSIONS_URL =
@@ -78,5 +78,61 @@ describe('clearSessionContext', () => {
 
     await expect(clearSessionContext('bad id!')).rejects.toThrow(/Invalid session id/);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('setSessionContext', () => {
+  it('appends an event that sets the scheme/plan state keys', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: 'OK' });
+    globalThis.fetch = fetchMock;
+
+    await setSessionContext('s-session-123', { scheme: 'bonitas', plan: 'boncomplete' });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe(`${SESSIONS_URL}/s-session-123:appendEvent`);
+    const body = JSON.parse(init.body);
+    expect(body.invocationId).toMatch(/^set-context-/);
+    expect(body.actions.stateDelta).toEqual({
+      selected_scheme: 'bonitas',
+      selected_plan: 'boncomplete',
+    });
+  });
+
+  it('nulls the plan for a scheme-wide selection', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: 'OK' });
+    globalThis.fetch = fetchMock;
+
+    await setSessionContext('s-session-123', { scheme: 'discovery', plan: null });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.actions.stateDelta).toEqual({
+      selected_scheme: 'discovery',
+      selected_plan: null,
+    });
+  });
+
+  it('treats a missing session (404) as a no-op', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+    });
+
+    await expect(
+      setSessionContext('s-session-123', { scheme: 'bonitas', plan: null }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('throws with status detail on other non-OK responses', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 403,
+      statusText: 'Forbidden',
+      text: () => Promise.resolve('permission denied'),
+    });
+
+    await expect(
+      setSessionContext('s-session-123', { scheme: 'bonitas', plan: null }),
+    ).rejects.toThrow(/SetSessionContext failed: 403 Forbidden — permission denied/);
   });
 });

@@ -13,6 +13,8 @@
 # testing
 /coverage
 /e2e-artifacts
+# design mockups (rendered screenshots)
+/mockups/shots
 
 # next.js
 /.next/

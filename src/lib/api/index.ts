@@ -1,1 +1,2 @@
-export { getOrCreateUserId, streamMessage } from './chat';
+export { getOrCreateUserId, streamMessage, setChatContext } from './chat';
+export type { ChatContextInput, ChatContextResult } from './chat';

@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mockup — Context picker chip (scheme → plan tree)</title>
+<style>
+  :root{
+    --primary:#2f43c8;
+    --primary-weak:#eef0fd;
+    --primary-border:#c9cff7;
+    --surface:#f4f5f9;
+    --card:#ffffff;
+    --line:#e4e6ee;
+    --muted:#6b7280;
+    --text:#111827;
+    --danger:#dc2626;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+    background:var(--surface);color:var(--text);padding:28px;
+  }
+  h1{font-size:18px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:20px}
+  .wrap{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap}
+
+  /* ---------- fake app card ---------- */
+  .app{
+    width:720px;background:var(--card);border:1px solid var(--line);border-radius:18px;
+    box-shadow:0 10px 30px rgba(17,24,39,.08);overflow:hidden;display:flex;flex-direction:column;
+    height:620px;position:relative;
+  }
+  .app-head{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line)}
+  .brand{display:flex;align-items:center;gap:10px}
+  .logo{width:28px;height:28px;border-radius:8px;background:var(--primary);color:#fff;display:grid;place-items:center;font-size:14px}
+  .brand b{font-size:14px}
+  .brand span{display:block;font-size:11px;color:var(--muted)}
+  .newchat{font-size:12px;font-weight:600;color:var(--primary);background:var(--primary-weak);border:1px solid var(--primary-border);border-radius:999px;padding:6px 12px}
+
+  .chat{flex:1;overflow:auto;padding:18px;display:flex;flex-direction:column;gap:14px;background:linear-gradient(#fbfbfd,#f7f8fc)}
+  .msg{display:flex;gap:10px;max-width:88%}
+  .msg.user{align-self:flex-end;flex-direction:row-reverse}
+  .av{width:30px;height:30px;border-radius:9px;background:var(--primary-weak);color:var(--primary);display:grid;place-items:center;flex:0 0 auto;font-size:13px}
+  .bubble{padding:10px 14px;border-radius:16px;font-size:13.5px;line-height:1.5}
+  .msg.assistant .bubble{background:#fff;border:1px solid var(--line)}
+  .msg.user .bubble{background:var(--primary);color:#fff}
+
+  /* ---------- composer ---------- */
+  .composer{border-top:1px solid var(--line);padding:12px 14px;background:#fff;position:relative}
+  .composer form{display:flex;gap:8px;align-items:flex-end}
+  .input{
+    flex:1;min-height:44px;display:flex;align-items:center;padding:11px 14px;border:1px solid var(--line);
+    border-radius:12px;color:#9ca3af;font-size:13.5px;background:#fff;
+  }
+  .send{width:44px;height:44px;border-radius:12px;background:var(--primary);color:#fff;display:grid;place-items:center;flex:0 0 auto;border:none;font-size:16px}
+
+  /* ---------- the chip button (inline-left of the prompt) ---------- */
+  .chip{
+    display:inline-flex;align-items:center;gap:7px;height:44px;padding:0 12px;border-radius:12px;
+    border:1px solid var(--primary-border);background:var(--primary-weak);color:var(--primary);
+    font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;flex:0 0 auto;
+  }
+  .chip .ico{font-size:13px;line-height:1}
+  .chip .caret{font-size:10px;opacity:.75}
+  .chip .lab{max-width:190px;overflow:hidden;text-overflow:ellipsis}
+  .chip .lab small{font-weight:600;opacity:.85}
+  .chip.is-all{background:#f3f4f8;border-color:var(--line);color:#4b5563}
+  .chip:hover{filter:brightness(.97)}
+  .chip[aria-expanded="true"]{box-shadow:0 0 0 3px rgba(47,67,200,.14)}
+
+  /* ---------- popover / tree ---------- */
+  .picker{
+    position:absolute;bottom:calc(100% - 4px);left:14px;width:330px;max-height:380px;
+    background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 18px 44px rgba(17,24,39,.18);
+    overflow:hidden;display:none;z-index:20;
+  }
+  .picker.open{display:flex;flex-direction:column}
+  .picker-head{padding:11px 13px 9px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .ph-left{display:flex;flex-direction:column;gap:1px}
+  .ph-close{border:none;background:transparent;color:var(--muted);cursor:pointer;font-size:12px;padding:4px 7px;border-radius:6px}
+  .ph-close:hover{background:#f0f1f6;color:var(--text)}
+  .picker-head b{font-size:12.5px}
+  .picker-head span{font-size:10.5px;color:var(--muted)}
+  .tree{overflow:auto;padding:6px}
+  .node{
+    display:flex;align-items:center;gap:8px;padding:8px 9px;border-radius:9px;font-size:13px;cursor:pointer;
+    user-select:none;
+  }
+  .node:hover{background:#f6f7fb}
+  .node.sel{background:var(--primary-weak)}
+  .node.sel .name{color:var(--primary);font-weight:700}
+  .node .twisty{
+    width:18px;height:18px;flex:0 0 auto;display:grid;place-items:center;font-size:9px;color:var(--muted);
+    border-radius:5px;background:transparent;border:none;cursor:pointer;
+  }
+  .node .twisty:hover{background:#eceefa}
+  .node .name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .node .check{color:var(--primary);font-size:12px}
+  .node.root .name{font-weight:700}
+  .children{padding-left:16px}
+  .children.hidden{display:none}
+  .node.plan .name{font-weight:400;color:#374151}
+  .node.plan.sel .name{font-weight:700;color:var(--primary)}
+  .divider{height:1px;background:var(--line);margin:6px 4px}
+  .picker-foot{padding:8px 12px;border-top:1px solid var(--line);font-size:10.5px;color:var(--muted);display:flex;justify-content:space-between;align-items:center;gap:8px}
+
+  /* ---------- notes ---------- */
+  .notes{width:360px;font-size:13px;line-height:1.55;color:#374151}
+  .notes h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 8px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:12px}
+  .card ol,.card ul{margin:6px 0 0;padding-left:18px}
+  .card li{margin:4px 0}
+  .pill-legend{display:flex;gap:8px;align-items:center;margin:8px 0 0}
+  .tag{font-size:11px;font-weight:700;padding:4px 9px;border-radius:999px;background:var(--primary-weak);color:var(--primary);border:1px solid var(--primary-border)}
+  .tag.grey{background:#f3f4f8;color:#4b5563;border-color:var(--line)}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .toolbar button{font-size:12px;padding:7px 11px;border-radius:9px;border:1px solid var(--line);background:#fff;cursor:pointer;font-weight:600}
+  .toolbar button:hover{background:#f6f7fb}
+  .toolbar button.on{background:var(--primary);color:#fff;border-color:var(--primary)}
+  .q{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:10px;padding:10px 12px;font-size:12.5px}
+</style>
+</head>
+<body>
+  <h1>Context picker chip — mockup</h1>
+  <div class="sub">Composer chip inline-left of the prompt; press it to change scheme / plan. Interactive — click the chip and the tree.</div>
+
+  <div class="toolbar">
+    <button data-preset="all">All Schemes (default)</button>
+    <button data-preset="scheme">Scheme selected</button>
+    <button data-preset="plan">Plan selected</button>
+    <button data-preset="open">Picker open</button>
+  </div>
+
+  <div class="wrap">
+    <!-- ============ app mock ============ -->
+    <div class="app">
+      <div class="app-head">
+        <div class="brand">
+          <div class="logo">✚</div>
+          <div><b>Medical Aid Advisor Chat</b><span>Grounded advice &amp; scheme comparison engine</span></div>
+        </div>
+        <button class="newchat">⟲ New chat</button>
+      </div>
+
+      <div class="chat">
+        <div class="msg assistant">
+          <div class="av">✚</div>
+          <div class="bubble">Hello! I can help you understand medical aid plans, benefits, and coverage options. What would you like to know?</div>
+        </div>
+        <div class="msg user"><div class="bubble">Is a hospital plan enough if I have a chronic condition?</div></div>
+        <div class="msg assistant">
+          <div class="av">✚</div>
+          <div class="bubble">It depends on the scheme and the plan tier. Tell me your scheme (or switch context below) and I'll compare the hospital tiers that cover chronic medication.</div>
+        </div>
+      </div>
+
+      <div class="composer">
+        <!-- picker popover -->
+        <div class="picker" id="picker" role="dialog" aria-label="Scheme and plan context">
+          <div class="picker-head">
+            <div class="ph-left">
+              <b>Scheme &amp; plan</b>
+              <span>Applies to your next question</span>
+            </div>
+            <button class="ph-close" id="closePicker" aria-label="Close">✕</button>
+          </div>
+          <div class="tree" id="tree">
+            <!-- root -->
+            <div class="node root sel" data-id="all" data-kind="all">
+              <span class="twisty" style="visibility:hidden">▾</span>
+              <span class="name">All Schemes</span>
+              <span class="check">✓</span>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- Bonitas (collapsed) -->
+            <div class="node scheme" data-scheme="bonitas">
+              <button class="twisty" data-twisty="bonitas" aria-label="Expand Bonitas">▸</button>
+              <span class="name">Bonitas Medical Fund</span>
+            </div>
+            <div class="children hidden" data-children="bonitas">
+              <div class="node plan" data-scheme="bonitas" data-plan="__all" data-kind="plan"><span class="twisty" style="visibility:hidden">•</span><span class="name">All plans</span></div>
+              <div class="node plan" data-scheme="bonitas" data-id="boncomprehensive"><span class="twisty" style="visibility:hidden">•</span><span class="name">BonComprehensive</span></div>
+              <div class="node plan" data-scheme="bonitas" data-id="boncomplete"><span class="twisty" style="visibility:hidden">•</span><span class="name">BonComplete</span></div>
+              <div class="node plan" data-scheme="bonitas" data-id="bonprime"><span class="twisty" style="visibility:hidden">•</span><span class="name">BonPrime</span></div>
+              <div class="node plan" data-scheme="bonitas" data-id="bonclassic"><span class="twisty" style="visibility:hidden">•</span><span class="name">BonClassic</span></div>
+              <div class="node plan" data-scheme="bonitas" data-id="bonsave"><span class="twisty" style="visibility:hidden">•</span><span class="name">BonSave</span></div>
+              <div class="node plan" data-scheme="bonitas" data-id="bonfit"><span class="twisty" style="visibility:hidden">•</span><span class="name">BonFit</span></div>
+              <div class="node plan" data-scheme="bonitas" data-id="boncore"><span class="twisty" style="visibility:hidden">•</span><span class="name">BonCore</span></div>
+              <div class="node plan" data-scheme="bonitas" data-id="bonstart"><span class="twisty" style="visibility:hidden">•</span><span class="name">BonStart</span></div>
+            </div>
+
+            <!-- Discovery (expanded + selected) -->
+            <div class="node scheme sel" data-scheme="discovery">
+              <button class="twisty" data-twisty="discovery" aria-label="Collapse Discovery">▾</button>
+              <span class="name">Discovery Health Medical Scheme</span>
+            </div>
+            <div class="children" data-children="discovery">
+              <div class="node plan" data-scheme="discovery" data-plan="__all" data-kind="plan"><span class="twisty" style="visibility:hidden">•</span><span class="name">All plans</span></div>
+              <div class="node plan sel" data-scheme="discovery" data-id="executive"><span class="twisty" style="visibility:hidden">•</span><span class="name">Executive Plan</span><span class="check">✓</span></div>
+              <div class="node plan" data-scheme="discovery" data-id="classic_comprehensive"><span class="twisty" style="visibility:hidden">•</span><span class="name">Classic Comprehensive</span></div>
+              <div class="node plan" data-scheme="discovery" data-id="classic_priority"><span class="twisty" style="visibility:hidden">•</span><span class="name">Classic Priority</span></div>
+              <div class="node plan" data-scheme="discovery" data-id="classic_saver"><span class="twisty" style="visibility:hidden">•</span><span class="name">Classic Saver</span></div>
+              <div class="node plan" data-scheme="discovery" data-id="classic_core"><span class="twisty" style="visibility:hidden">•</span><span class="name">Classic Core</span></div>
+              <div class="node plan" data-scheme="discovery" data-id="classic_smart"><span class="twisty" style="visibility:hidden">•</span><span class="name">Classic Smart</span></div>
+              <div class="node plan" data-scheme="discovery" data-id="keycare_plus"><span class="twisty" style="visibility:hidden">•</span><span class="name">KeyCare Plus</span></div>
+            </div>
+
+            <!-- Fedhealth (collapsed, shows the pattern generalises) -->
+            <div class="node scheme" data-scheme="fedhealth">
+              <button class="twisty" data-twisty="fedhealth" aria-label="Expand Fedhealth">▸</button>
+              <span class="name">Fedhealth Medical Scheme</span>
+            </div>
+            <div class="children hidden" data-children="fedhealth">
+              <div class="node plan" data-scheme="fedhealth" data-plan="__all" data-kind="plan"><span class="twisty" style="visibility:hidden">•</span><span class="name">All plans</span></div>
+              <div class="node plan" data-scheme="fedhealth" data-id="maxima_executive"><span class="twisty" style="visibility:hidden">•</span><span class="name">Maxima Executive</span></div>
+              <div class="node plan" data-scheme="fedhealth" data-id="flexi_max"><span class="twisty" style="visibility:hidden">•</span><span class="name">Flexi Max</span></div>
+            </div>
+          </div>
+          <div class="picker-foot">
+            <span>Selecting applies it to your next question</span>
+          </div>
+        </div>
+
+        <form onsubmit="return false">
+          <button type="button" class="chip is-all" id="chip" aria-haspopup="dialog" aria-expanded="false">
+            <span class="ico">▦</span>
+            <span class="lab" id="chipLabel">All Schemes</span>
+            <span class="caret">▼</span>
+          </button>
+          <div class="input">Ask about medical aid plans, benefits, or coverage…</div>
+          <button class="send" type="submit">➤</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- ============ notes ============ -->
+    <div class="notes">
+      <div class="card">
+        <h3>What changed</h3>
+        <ol>
+          <li><b>Inline-left</b>: the chip sits in the composer, left of the input, bottom-aligned (grows with the input).</li>
+          <li><b>Chip → picker</b>: it’s now a button with a caret, not a static pill. Pressing it opens a tree.</li>
+          <li><b>Tree</b>: <b>All Schemes</b> is the root. Each scheme has <b>All plans</b> + its plans. Schemes you haven’t selected stay collapsed.</li>
+          <li>Selecting a node updates the chip instantly and applies to your next question.</li>
+        </ol>
+      </div>
+
+      <div class="card">
+        <h3>Chip states</h3>
+        <div class="pill-legend">
+          <span class="tag grey">▦ All Schemes</span>
+          <span>no filter — advisor will ask which scheme</span>
+        </div>
+        <div class="pill-legend">
+          <span class="tag">▦ Discovery ▼</span>
+          <span>scheme-wide (all plans)</span>
+        </div>
+        <div class="pill-legend">
+          <span class="tag">▦ Discovery › Executive Plan ▼</span>
+          <span>scheme + plan</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Behaviour</h3>
+        <ul>
+          <li>Opens as a popover anchored <b>above</b> the chip (flips below when there’s room).</li>
+          <li>On narrow screens it becomes a bottom sheet.</li>
+          <li>Selected scheme auto-expands; other schemes stay collapsed.</li>
+          <li><b>Selecting a node applies it and closes the popover.</b></li>
+          <li>Expanding/collapsing via the twisty is <b>not</b> a selection — the popover stays open.</li>
+          <li>A visible <b>✕</b> closes without selecting (Esc also works, but isn’t the only way out).</li>
+          <li>“All Schemes” = clear context.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3>Open question — how the change reaches the agent</h3>
+        <div class="q">
+          Context lives in the agent <i>session</i>, not the browser, so a silent chip change needs a small backend addition.
+          <br><br>
+          <b>Option A (recommended):</b> new <code>POST /api/chat/context</code> that appends a state delta setting
+          <code>selected_scheme</code> / <code>selected_plan</code> — same pattern as the existing reset route.
+          Chip changes silently; your next question is scoped. “All Schemes” clears the same keys.
+          <br><br>
+          <b>Option B:</b> no backend change — picking a node sends a normal chat turn (visible bubble + reply), like
+          today’s scheme→plan flow. Noisier for a pure context switch.
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const chip = document.getElementById('chip');
+  const chipLabel = document.getElementById('chipLabel');
+  const picker = document.getElementById('picker');
+  const tree = document.getElementById('tree');
+
+  const state = { scheme: null, plan: null, expanded: new Set(['discovery']) };
+  const NAMES = { bonitas:'Bonitas', discovery:'Discovery', fedhealth:'Fedhealth' };
+
+  function setChip(){
+    if (!state.scheme) { chipLabel.textContent = 'All Schemes'; chip.classList.add('is-all'); }
+    else if (!state.plan) { chipLabel.textContent = NAMES[state.scheme] || state.scheme; chip.classList.remove('is-all'); }
+    else { chipLabel.textContent = (NAMES[state.scheme]||state.scheme) + ' › ' + state.plan; chip.classList.remove('is-all'); }
+  }
+
+  function render(){
+    // root
+    const root = tree.querySelector('[data-kind="all"]');
+    root.classList.toggle('sel', !state.scheme);
+    root.querySelector('.check').style.visibility = !state.scheme ? 'visible' : 'hidden';
+
+    // schemes
+    tree.querySelectorAll('.node.scheme').forEach(n=>{
+      const slug = n.dataset.scheme;
+      n.classList.toggle('sel', state.scheme === slug && !state.plan);
+      const tw = n.querySelector('.twisty');
+      const open = state.expanded.has(slug);
+      tw.textContent = open ? '▾' : '▸';
+      tw.setAttribute('aria-label', (open?'Collapse ':'Expand ') + slug);
+      const kids = tree.querySelector('[data-children="'+slug+'"]');
+      kids.classList.toggle('hidden', !open);
+
+      kids.querySelectorAll('.node.plan').forEach(p=>{
+        const isAll = p.dataset.plan === '__all';
+        const planName = p.querySelector('.name').textContent.trim();
+        const sel = isAll ? (state.scheme===slug && !state.plan)
+                          : (state.scheme===slug && state.plan===planName);
+        p.classList.toggle('sel', sel);
+        let chk = p.querySelector('.check');
+        if (sel){ if(!chk){ chk=document.createElement('span'); chk.className='check'; p.appendChild(chk);} chk.textContent='✓'; }
+        else if (chk) chk.remove();
+      });
+    });
+    setChip();
+  }
+
+  function open(open){
+    picker.classList.toggle('open', open);
+    chip.setAttribute('aria-expanded', String(open));
+  }
+
+  chip.addEventListener('click', ()=> open(!picker.classList.contains('open')));
+
+  tree.addEventListener('click', (e)=>{
+    const tw = e.target.closest('.twisty');
+    if (tw && tw.dataset.twisty){
+      const slug = tw.dataset.twisty;
+      state.expanded.has(slug) ? state.expanded.delete(slug) : state.expanded.add(slug);
+      render(); e.stopPropagation(); return;
+    }
+    const node = e.target.closest('.node'); if(!node) return;
+
+    if (node.dataset.kind === 'all'){ state.scheme=null; state.plan=null; state.expanded.clear(); }
+    else if (node.classList.contains('scheme')){
+      state.scheme = node.dataset.scheme; state.plan = null;
+      state.expanded.clear(); state.expanded.add(state.scheme);
+    } else if (node.classList.contains('plan')){
+      const slug = node.dataset.scheme;
+      state.scheme = slug;
+      state.plan = node.dataset.plan === '__all' ? null : node.querySelector('.name').textContent.trim();
+      state.expanded.add(slug);
+    }
+    open(false); // a selection dismisses the picker
+    render();
+  });
+
+  document.getElementById('closePicker').addEventListener('click', ()=> open(false));
+  document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') open(false); });
+
+  // preset preview buttons
+  document.querySelectorAll('.toolbar button').forEach(b=>b.addEventListener('click',()=>{
+    document.querySelectorAll('.toolbar button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+    const p = b.dataset.preset;
+    if (p==='all'){ state.scheme=null; state.plan=null; state.expanded.clear(); open(false); }
+    if (p==='scheme'){ state.scheme='bonitas'; state.plan=null; state.expanded=new Set(['bonitas']); open(false); }
+    if (p==='plan'){ state.scheme='discovery'; state.plan='Executive Plan'; state.expanded=new Set(['discovery']); open(false); }
+    if (p==='open'){ state.scheme='discovery'; state.plan=null; state.expanded=new Set(['discovery']); open(true); }
+    render();
+  }));
+
+  // deep-linkable state for screenshots: ?state=open|scheme|plan|all
+  const qp = new URLSearchParams(location.search).get('state');
+  if (qp){
+    const btn = document.querySelector('.toolbar button[data-preset="'+qp+'"]');
+    if (btn) btn.click();
+  } else {
+    render(); // default: Discovery expanded, "All Schemes" root selected
+  }
+</script>
+</body>
+</html>

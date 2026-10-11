@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { streamMessage } from './chat';
+import { streamMessage, setChatContext } from './chat';
 import type { ChatEvent, ChatRequest } from '@/types';
 
 const store: Record<string, string> = {};
@@ -115,5 +115,52 @@ describe('streamMessage', () => {
       { type: 'citations', citations: [citation] },
       { type: 'done' },
     ]);
+  });
+});
+
+describe('setChatContext', () => {
+  it('POSTs the context to /api/chat/context and returns the session id', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ok: true, sessionId: 's-9' }),
+    });
+    globalThis.fetch = fetchMock;
+
+    const result = await setChatContext({ scheme: 'bonitas', plan: 'boncomplete' });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/chat/context');
+    expect(init.method).toBe('POST');
+    expect(init.headers['x-user-id']).toBeDefined();
+    expect(JSON.parse(init.body)).toEqual({ scheme: 'bonitas', plan: 'boncomplete' });
+    expect(result).toEqual({ ok: true, sessionId: 's-9' });
+  });
+
+  it('forwards the sessionId, including on clear', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ok: true }),
+    });
+    globalThis.fetch = fetchMock;
+
+    await setChatContext({ sessionId: 's-1', scheme: null, plan: null });
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      sessionId: 's-1',
+      scheme: null,
+      plan: null,
+    });
+  });
+
+  it('throws on a non-OK response', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 502,
+      text: () => Promise.resolve('boom'),
+    });
+
+    await expect(setChatContext({ scheme: 'bonitas', plan: null })).rejects.toThrow(
+      /Context update failed: 502/,
+    );
   });
 });

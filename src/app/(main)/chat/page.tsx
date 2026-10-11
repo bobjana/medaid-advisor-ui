@@ -1,23 +1,20 @@
 'use client';
 
 import { useState, useRef, useEffect, FormEvent } from 'react';
-import { Send, Loader2, Stethoscope, RotateCcw, X } from 'lucide-react';
+import { Send, Loader2, Stethoscope, RotateCcw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import type { Citation, ContextOptions } from '@/types';
-import { getOrCreateUserId, streamMessage } from '@/lib/api';
+import type { Citation, ContextOptions, PlanOption, SchemeOption } from '@/types';
+import { setChatContext, streamMessage } from '@/lib/api';
 import { randomUUID, nowMs } from '@/lib/utils';
+import { SCHEME_CATALOG } from '@/lib/chat/scheme-catalog';
 import { MarkdownMessage } from '@/components/chat/MarkdownMessage';
 import { Citations } from '@/components/chat/Citations';
 import { ContextSelector } from '@/components/chat/ContextSelector';
+import { ContextPicker, type ContextSelection } from '@/components/chat/ContextPicker';
 
 const JSON_BLOCK_RE = /```(?:json)?\s*\{[\s\S]*?"(?:schemes|plans|type)"[\s\S]*?\}\s*```/g;
-
-const SCHEME_LABELS: Record<string, string> = {
-  bonitas: 'Bonitas',
-  discovery: 'Discovery',
-};
 
 /**
  * How long the user gets to pick a specific plan after choosing a scheme
@@ -48,6 +45,7 @@ interface PendingPlan {
   messageId: string;
   schemeSlug: string;
   schemeName: string;
+  plans: PlanOption[];
   /** Epoch ms when the default "All plans" choice is applied. */
   deadline: number;
 }
@@ -57,7 +55,9 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeContext, setActiveContext] = useState<{ scheme?: string; plan?: string }>({});
+  const [activeContext, setActiveContext] = useState<ContextSelection>({});
+  const [schemeCatalog, setSchemeCatalog] = useState<SchemeOption[]>(SCHEME_CATALOG);
+  const [contextBusy, setContextBusy] = useState(false);
   const [pendingPlan, setPendingPlan] = useState<PendingPlan | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   // A page load always starts a fresh conversation: the session id is only
@@ -110,13 +110,14 @@ export default function ChatPage() {
     settlePlanDecision();
   }
 
-  function startPlanDecision(messageId: string, schemeSlug: string, schemeName: string) {
+  function startPlanDecision(messageId: string, scheme: SchemeOption) {
     clearPlanTimer();
     planResolvedRef.current = false;
     const pending: PendingPlan = {
       messageId,
-      schemeSlug,
-      schemeName,
+      schemeSlug: scheme.slug,
+      schemeName: scheme.name,
+      plans: scheme.plans,
       deadline: nowMs() + PLAN_DECISION_MS,
     };
     pendingPlanRef.current = pending;
@@ -131,13 +132,50 @@ export default function ChatPage() {
     const pending = settlePlanDecision();
     if (!pending) return;
     if (choice.kind === 'all') {
-      setActiveContext({ scheme: pending.schemeSlug, plan: 'All plans' });
+      setActiveContext({ schemeSlug: pending.schemeSlug, schemeName: pending.schemeName });
       // Naming the scheme here makes the backend treat it as scheme-wide
       // (plan unset), i.e. "all plans" for that scheme.
       sendMessage(`All ${pending.schemeName} plans`);
     } else {
-      setActiveContext({ scheme: pending.schemeSlug, plan: choice.label });
+      const plan = pending.plans.find((p) => p.name === choice.label);
+      setActiveContext({
+        schemeSlug: pending.schemeSlug,
+        schemeName: pending.schemeName,
+        planId: plan?.id,
+        planName: choice.label,
+      });
       sendMessage(choice.label);
+    }
+  }
+
+  /**
+   * Apply a scheme/plan chosen in the composer picker. This changes the
+   * agent-side session context without adding a chat turn, so the next
+   * question is scoped (and a follow-up can just be asked).
+   */
+  async function applyContext(next: ContextSelection) {
+    cancelPlanDecision();
+    setActiveContext(next);
+    // Nothing to tell the agent if there is no session yet and the user just
+    // picked the default "All Schemes".
+    if (!sessionIdRef.current && !next.schemeSlug) return;
+
+    setContextBusy(true);
+    try {
+      const result = await setChatContext({
+        sessionId: sessionIdRef.current,
+        scheme: next.schemeSlug ?? null,
+        plan: next.planId ?? null,
+      });
+      if (result.sessionId) sessionIdRef.current = result.sessionId;
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? `Could not update context: ${err.message}`
+          : 'Could not update context',
+      );
+    } finally {
+      setContextBusy(false);
     }
   }
 
@@ -152,7 +190,16 @@ export default function ChatPage() {
         resolvePlanDecision({ kind: 'plan', label: selection });
       } else {
         // Plan options supplied directly by the backend (no default window).
-        setActiveContext((prev) => ({ ...prev, plan: selection }));
+        const plan = options?.plans?.find((p) => p.name === selection);
+        const scheme = options?.scheme
+          ? schemeCatalog.find((s) => s.slug === options.scheme)
+          : undefined;
+        setActiveContext((prev) => ({
+          schemeSlug: scheme?.slug ?? prev.schemeSlug,
+          schemeName: scheme?.name ?? prev.schemeName,
+          planId: plan?.id,
+          planName: selection,
+        }));
         setMessages((prev) =>
           prev.map((m) => (m.id === messageId ? { ...m, contextOptions: undefined } : m)),
         );
@@ -173,15 +220,15 @@ export default function ChatPage() {
         plans: scheme.plans,
         schemes: options?.schemes,
       };
-      setActiveContext({ scheme: scheme.slug });
+      setActiveContext({ schemeSlug: scheme.slug, schemeName: scheme.name });
       setMessages((prev) =>
         prev.map((m) => (m.id === messageId ? { ...m, contextOptions: planOptions } : m)),
       );
-      startPlanDecision(messageId, scheme.slug, scheme.name);
+      startPlanDecision(messageId, scheme);
       return;
     }
 
-    setActiveContext({ scheme: scheme?.slug ?? selection.toLowerCase() });
+    setActiveContext({ schemeSlug: scheme?.slug, schemeName: scheme?.name ?? selection });
     sendMessage(selection);
   }
 
@@ -240,6 +287,10 @@ export default function ChatPage() {
               m.id === assistantId ? { ...m, contextOptions: event.options } : m,
             ),
           );
+          // The agent's catalogue is authoritative — keep the picker in sync.
+          if (event.options.schemes && event.options.schemes.length > 0) {
+            setSchemeCatalog(event.options.schemes);
+          }
         } else if (event.type === 'error') {
           setError(event.message);
         }
@@ -277,28 +328,6 @@ export default function ChatPage() {
     setError(null);
   }
 
-  async function clearContext() {
-    cancelPlanDecision();
-    setActiveContext({});
-    setMessages((prev) =>
-      prev.map((m) => (m.contextOptions ? { ...m, contextOptions: undefined } : m)),
-    );
-    const sessionId = sessionIdRef.current;
-    if (!sessionId) return;
-    try {
-      await fetch('/api/chat/reset', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': getOrCreateUserId(),
-        },
-        body: JSON.stringify({ sessionId }),
-      });
-    } catch {
-      return;
-    }
-  }
-
   const canSend = input.trim().length > 0 && !loading;
 
   return (
@@ -328,21 +357,6 @@ export default function ChatPage() {
               <RotateCcw className="w-3.5 h-3.5" />
               New chat
             </button>
-            {activeContext.scheme && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
-                {SCHEME_LABELS[activeContext.scheme] ?? activeContext.scheme}
-                {activeContext.plan && ` › ${activeContext.plan}`}
-                <button
-                  type="button"
-                  onClick={clearContext}
-                  title="Clear scheme context"
-                  aria-label="Clear scheme context"
-                  className="ml-0.5 -mr-1 p-0.5 rounded-full hover:bg-primary/20 transition-colors"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            )}
           </div>
         </CardHeader>
 
@@ -408,6 +422,12 @@ export default function ChatPage() {
             </div>
           )}
           <form onSubmit={handleSend} className="flex gap-2 items-end">
+            <ContextPicker
+              selection={activeContext}
+              schemes={schemeCatalog}
+              onSelect={applyContext}
+              busy={contextBusy}
+            />
             <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}

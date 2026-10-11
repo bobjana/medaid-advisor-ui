@@ -12,6 +12,40 @@ export function getOrCreateUserId(): string {
   return id;
 }
 
+export interface ChatContextInput {
+  sessionId?: string;
+  /** Scheme slug (e.g. `bonitas`), or `null` for "all schemes". */
+  scheme: string | null;
+  /** Plan id (e.g. `boncomplete`), or `null` for scheme-wide. */
+  plan: string | null;
+}
+
+export interface ChatContextResult {
+  sessionId?: string;
+}
+
+/**
+ * Set (or clear) the agent-side scheme/plan context without adding a chat
+ * turn. Returns the session id when the backend had to create one.
+ */
+export async function setChatContext(input: ChatContextInput): Promise<ChatContextResult> {
+  const resp = await fetch('/api/chat/context', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-id': getOrCreateUserId(),
+    },
+    body: JSON.stringify(input),
+  });
+  if (!resp.ok) {
+    const detail = await resp.text().catch(() => '');
+    throw new Error(
+      `Context update failed: ${resp.status}${detail ? ` — ${detail}` : ''}`,
+    );
+  }
+  return (await resp.json().catch(() => ({}))) as ChatContextResult;
+}
+
 export async function* streamMessage(req: ChatRequest): AsyncGenerator<ChatEvent> {
   const resp = await fetch('/api/chat', {
     method: 'POST',

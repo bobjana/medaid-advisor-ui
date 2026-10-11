@@ -1,16 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import type { ChatEvent, ContextOptions } from '@/types';
 import ChatPage from './page';
 
 vi.mock('@/lib/api', () => ({
   getOrCreateUserId: () => 'test-user',
   streamMessage: vi.fn(),
+  setChatContext: vi.fn(),
 }));
 
-import { streamMessage } from '@/lib/api';
+import { setChatContext, streamMessage } from '@/lib/api';
 
 const streamMessageMock = vi.mocked(streamMessage);
+const setChatContextMock = vi.mocked(setChatContext);
 
 const SCHEME_OPTIONS: ContextOptions = {
   type: 'scheme_selection',
@@ -60,8 +62,14 @@ async function askSchemeQuestion() {
   await flush();
 }
 
+function contextChip() {
+  return screen.getByRole('button', { name: /^Context:/ });
+}
+
 beforeEach(() => {
   streamMessageMock.mockReset();
+  setChatContextMock.mockReset();
+  setChatContextMock.mockResolvedValue({ sessionId: 's-test' });
   Element.prototype.scrollIntoView = vi.fn();
 });
 
@@ -78,7 +86,6 @@ describe('ChatPage scheme → plan flow', () => {
     render(<ChatPage />);
     await askSchemeQuestion();
 
-    // The agent's scheme prompt is on screen.
     const bonitas = screen.getByRole('button', { name: 'Bonitas Medical Fund' });
     expect(streamMessageMock).toHaveBeenCalledTimes(1);
 
@@ -102,9 +109,7 @@ describe('ChatPage scheme → plan flow', () => {
       sessionId: 's-test',
     });
 
-    const clear = screen.getByRole('button', { name: 'Clear scheme context' });
-    expect(clear.parentElement?.textContent).toContain('Bonitas');
-    expect(clear.parentElement?.textContent).toContain('All plans');
+    expect(screen.getByRole('button', { name: /Context: Bonitas\./ })).toBeInTheDocument();
   });
 
   it('sends the specific plan if the user picks one before the default expires', async () => {
@@ -130,8 +135,9 @@ describe('ChatPage scheme → plan flow', () => {
     await flush();
     expect(streamMessageMock).toHaveBeenCalledTimes(2);
 
-    const clear = screen.getByRole('button', { name: 'Clear scheme context' });
-    expect(clear.parentElement?.textContent).toContain('BonComplete');
+    expect(
+      screen.getByRole('button', { name: /Context: Bonitas › BonComplete/ }),
+    ).toBeInTheDocument();
   });
 
   it('continues immediately when the user clicks "All plans"', async () => {
@@ -175,5 +181,101 @@ describe('ChatPage scheme → plan flow', () => {
 
     expect(streamMessageMock).toHaveBeenCalledTimes(2);
     expect(streamMessageMock.mock.calls[1][0]).toMatchObject({ message: 'Executive Plan' });
+  });
+});
+
+describe('ChatPage context picker', () => {
+  it('starts on "All Schemes", inline before the prompt, and resets on New chat', async () => {
+    vi.useFakeTimers();
+    streamMessageMock.mockReturnValueOnce(firstTurn());
+    streamMessageMock.mockReturnValueOnce(laterTurn());
+
+    render(<ChatPage />);
+
+    const chip = contextChip();
+    expect(chip).toHaveTextContent('All Schemes');
+    expect(chip).toHaveAttribute('aria-haspopup', 'dialog');
+    const textarea = screen.getByPlaceholderText(/Ask about medical aid plans/i);
+    expect(chip.compareDocumentPosition(textarea) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // Still the default while the agent asks which scheme to use.
+    await askSchemeQuestion();
+    expect(contextChip()).toHaveTextContent('All Schemes');
+
+    // Choosing a scheme via the message chips updates the composer chip.
+    fireEvent.click(screen.getByRole('button', { name: 'Bonitas Medical Fund' }));
+    await flush();
+    expect(contextChip()).toHaveTextContent('Bonitas');
+
+    // New chat returns to the default.
+    fireEvent.click(screen.getByRole('button', { name: /New chat/i }));
+    await flush();
+    expect(contextChip()).toHaveTextContent('All Schemes');
+  });
+
+  it('opens a tree, keeps it open while expanding, and closes on selection', async () => {
+    vi.useFakeTimers();
+    streamMessageMock.mockReturnValueOnce(firstTurn());
+    setChatContextMock.mockResolvedValue({ sessionId: 's-test' });
+
+    render(<ChatPage />);
+    await askSchemeQuestion();
+
+    // Open the picker.
+    fireEvent.click(contextChip());
+    const dialog = screen.getByRole('dialog', { name: 'Scheme and plan context' });
+    expect(within(dialog).getByText('All Schemes')).toBeInTheDocument();
+    expect(within(dialog).getByText('Bonitas Medical Fund')).toBeInTheDocument();
+    // Plans for a non-selected scheme start collapsed.
+    expect(within(dialog).queryByText('BonComplete')).not.toBeInTheDocument();
+
+    // Expanding is not a selection: the popover stays open, no context call.
+    fireEvent.click(within(dialog).getByRole('button', { name: /Expand Bonitas Medical Fund/ }));
+    expect(within(dialog).getByText('BonComplete')).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Scheme and plan context' })).toBeInTheDocument();
+    expect(setChatContextMock).not.toHaveBeenCalled();
+    expect(contextChip()).toHaveTextContent('All Schemes');
+
+    // Selecting a plan closes the popover and applies the context silently.
+    fireEvent.click(within(dialog).getByText('BonComplete'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await flush();
+    expect(setChatContextMock).toHaveBeenCalledWith({
+      sessionId: 's-test',
+      scheme: 'bonitas',
+      plan: 'boncomplete',
+    });
+    expect(contextChip()).toHaveTextContent('Bonitas › BonComplete');
+  });
+
+  it('"All Schemes" in the picker clears the context', async () => {
+    vi.useFakeTimers();
+    streamMessageMock.mockReturnValueOnce(firstTurn());
+    setChatContextMock.mockResolvedValue({ sessionId: 's-test' });
+
+    render(<ChatPage />);
+    await askSchemeQuestion();
+
+    fireEvent.click(contextChip());
+    const dialog = screen.getByRole('dialog', { name: 'Scheme and plan context' });
+    fireEvent.click(within(dialog).getByText('Discovery Health Medical Scheme'));
+    await flush();
+    expect(setChatContextMock).toHaveBeenCalledWith({
+      sessionId: 's-test',
+      scheme: 'discovery',
+      plan: null,
+    });
+    expect(contextChip()).toHaveTextContent('Discovery');
+
+    fireEvent.click(contextChip());
+    const reopened = screen.getByRole('dialog', { name: 'Scheme and plan context' });
+    fireEvent.click(within(reopened).getByText('All Schemes'));
+    await flush();
+    expect(setChatContextMock).toHaveBeenLastCalledWith({
+      sessionId: 's-test',
+      scheme: null,
+      plan: null,
+    });
+    expect(contextChip()).toHaveTextContent('All Schemes');
   });
 });

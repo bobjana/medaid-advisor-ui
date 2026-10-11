@@ -1,24 +1,26 @@
 /**
- * E2E verification of the scheme → plan context flow.
+ * E2E verification of the scheme → plan context flow and the composer
+ * context picker.
  *
  * Drives the UI with Playwright and checks:
  *
- *   1. Ambiguous questions prompt for a scheme (raw context JSON stripped).
+ *   1. Ambiguous questions prompt for a scheme (raw context JSON stripped);
+ *      a fresh session shows an "All Schemes" chip inline-left of the prompt.
  *   2. Choosing a scheme shows its plans *below* it with an "All plans" chip
  *      selected by default and a 3s countdown — and does NOT hit the backend
- *      yet (the regression this flow fixes).
- *   3. Picking a specific plan inside the window sends just that plan;
- *      letting the window lapse continues with all of the scheme's plans;
- *      clicking "All plans" continues immediately.
- *   4. Reloading starts a new conversation (no persisted session id, no
+ *      yet.
+ *   3. Picking a plan inside the window sends just that plan; letting the
+ *      window lapse (or clicking "All plans") continues scheme-wide.
+ *   4. The composer picker opens a scheme/plan tree: expanding a scheme is not
+ *      a selection (popover stays open), selecting applies the context
+ *      silently via /api/chat/context and closes the popover.
+ *   5. Reloading starts a new conversation (no persisted session id, no
  *      resumed scheme) and the next question re-prompts for a scheme.
- *   5. The pill's clear button resets the agent-side context.
  *   6. "New chat" returns to a clean slate.
  *
  * Usage:
  *   BASE_URL=http://localhost:3000 node scripts/e2e-scheme-context.mjs
- *   just e2e-gcp            # against the deployed GCP service
- *   BASE_URL=http://localhost:3000 HEADED=1 node scripts/e2e-scheme-context.mjs
+ *   just e2e-gcp
  */
 
 import { createRequire } from 'node:module';
@@ -135,11 +137,7 @@ async function send(page, text) {
   await submit.click();
 }
 
-function isChatRequest(req) {
-  return req.method() === 'POST' && req.url().includes('/api/chat');
-}
-
-/** Wait until the in-flight chat turn has finished. */
+/** Wait until the in-flight chat/context turn has finished. */
 async function waitForIdle(page, timeout = 90_000) {
   const startDeadline = Date.now() + 8_000;
   while (Date.now() < startDeadline) {
@@ -180,31 +178,36 @@ async function waitForPlanDecision(page, timeout = 30_000) {
   await allPlansChip(page).waitFor({ state: 'visible', timeout });
 }
 
-function clearButton(page) {
-  return page.getByRole('button', { name: 'Clear scheme context' });
+function contextChip(page) {
+  return page.getByRole('button', { name: /^Context:/ });
 }
 
-async function pillText(page) {
-  return clearButton(page).evaluate((el) => el.parentElement?.textContent?.replace(/\s+/g, ' ').trim());
+async function chipLabel(page) {
+  return (await contextChip(page).innerText()).replace(/\s+/g, ' ').trim();
+}
+
+function pickerDialog(page) {
+  return page.getByRole('dialog', { name: 'Scheme and plan context' });
 }
 
 const chatRequests = [];
+const contextRequests = [];
 const inflight = new Set();
 const resetResponses = [];
 const consoleErrors = [];
 
-function nonResetRequests() {
-  return chatRequests.filter((r) => !r.isReset);
+function turnRequests() {
+  return chatRequests.filter((r) => !r.isReset && !r.isContext);
 }
 
-async function waitForChatRequest(page, predicate, timeout = 20_000) {
+async function waitForRequest(page, list, predicate, timeout = 20_000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
-    const found = chatRequests.find(predicate);
+    const found = list.find(predicate);
     if (found) return found;
     await page.waitForTimeout(150);
   }
-  throw new Error('timed out waiting for a matching chat request');
+  throw new Error('timed out waiting for a matching request');
 }
 
 async function login(page) {
@@ -243,21 +246,28 @@ const page = await context.newPage();
 page.setDefaultTimeout(60_000);
 
 page.on('request', (req) => {
-  if (!isChatRequest(req)) return;
+  if (req.method() !== 'POST' || !req.url().includes('/api/chat')) return;
   inflight.add(req);
-  const isReset = req.url().includes('/api/chat/reset');
+  const url = req.url();
+  const isReset = url.includes('/api/chat/reset');
+  const isContext = url.includes('/api/chat/context');
   let body = {};
   try {
     body = req.postDataJSON() ?? {};
   } catch {
     /* ignore */
   }
-  chatRequests.push({
+  const entry = {
     isReset,
+    isContext,
     sessionId: body.sessionId,
     message: body.message,
+    scheme: body.scheme,
+    plan: body.plan,
     ts: Date.now(),
-  });
+  };
+  chatRequests.push(entry);
+  if (isContext) contextRequests.push(entry);
 });
 page.on('requestfinished', (req) => inflight.delete(req));
 page.on('requestfailed', (req) => inflight.delete(req));
@@ -292,6 +302,19 @@ try {
 
   // -- 1. Fresh turn prompts for a scheme ----------------------------------
   await scenario('Fresh conversation prompts for a scheme', async () => {
+    await step('new session shows an "All Schemes" chip inline-left of the prompt', async () => {
+      await page.goto(`${BASE_URL}/chat`, { waitUntil: 'domcontentloaded' });
+      await contextChip(page).waitFor({ state: 'visible' });
+      expect((await chipLabel(page)) === 'All Schemes', `unexpected chip: ${await chipLabel(page)}`);
+      const [chipBox, taBox] = await Promise.all([
+        contextChip(page).boundingBox(),
+        page.locator(TEXTAREA).boundingBox(),
+      ]);
+      expect(
+        !!chipBox && !!taBox && chipBox.x + chipBox.width <= taBox.x + 1,
+        'chip is not positioned inline to the left of the prompt',
+      );
+    });
     await step('trigger message renders scheme chips', async () => {
       await openSchemePrompt(page);
     });
@@ -312,30 +335,36 @@ try {
       await schemeChip(page, BONITAS).click();
       await waitForPlanDecision(page);
       await page.getByRole('button', { name: 'BonComplete', exact: true }).waitFor({ state: 'visible' });
-      expect(await clearButton(page).isVisible(), 'scheme pill did not appear');
       await page.getByText(/Using all plans by default/).waitFor({ state: 'visible' });
+      expect((await chipLabel(page)) === 'Bonitas', `unexpected chip: ${await chipLabel(page)}`);
     });
     await step('no backend request is made during the default window', async () => {
-      const before = chatRequests.length;
+      const before = turnRequests().length;
       await page.waitForTimeout(1200);
       expect(
-        chatRequests.length === before,
-        `scheme click sent a request early: ${JSON.stringify(chatRequests.slice(before))}`,
+        turnRequests().length === before,
+        `scheme click sent a request early: ${JSON.stringify(turnRequests().slice(before))}`,
       );
     });
     await step('picking a plan inside the window sends just that plan', async () => {
       await page.getByRole('button', { name: 'BonComplete', exact: true }).click();
       await waitForIdle(page);
-      const turn = await waitForChatRequest(page, (r) => !r.isReset && r.message === 'BonComplete');
+      const turn = await waitForRequest(
+        page,
+        chatRequests,
+        (r) => !r.isReset && !r.isContext && r.message === 'BonComplete',
+      );
       expect(turn, 'no chat request carried the plan name');
-      const pill = await pillText(page);
-      expect(/Bonitas/.test(pill) && /BonComplete/.test(pill), `unexpected pill: "${pill}"`);
+      expect(
+        (await chipLabel(page)) === 'Bonitas › BonComplete',
+        `unexpected chip: ${await chipLabel(page)}`,
+      );
     });
     await step('the plan window does not fire a second turn', async () => {
-      const before = nonResetRequests().length;
+      const before = turnRequests().length;
       await page.waitForTimeout(PLAN_DECISION_MS + 1500);
       expect(
-        nonResetRequests().length === before,
+        turnRequests().length === before,
         'the default "all plans" turn fired even though a plan was chosen',
       );
     });
@@ -349,17 +378,20 @@ try {
       const clickedAt = Date.now();
       await schemeChip(page, DISCOVERY).click();
       await waitForPlanDecision(page);
-      const turn = await waitForChatRequest(
+      const turn = await waitForRequest(
         page,
-        (r) => !r.isReset && /^All Discovery Health Medical Scheme plans$/.test(r.message ?? ''),
+        chatRequests,
+        (r) =>
+          !r.isReset &&
+          !r.isContext &&
+          /^All Discovery Health Medical Scheme plans$/.test(r.message ?? ''),
         20_000,
       );
       const elapsed = turn.ts - clickedAt;
       expect(elapsed >= PLAN_DECISION_MS - 400, `default fired too early (${elapsed}ms)`);
       expect(elapsed < 9_000, `default fired too late (${elapsed}ms)`);
       await waitForIdle(page);
-      const pill = await pillText(page);
-      expect(/Discovery/.test(pill) && /All plans/.test(pill), `unexpected pill: "${pill}"`);
+      expect((await chipLabel(page)) === 'Discovery', `unexpected chip: ${await chipLabel(page)}`);
     });
     await shot(page, '03-all-plans-default');
   });
@@ -372,9 +404,10 @@ try {
       await waitForPlanDecision(page);
       const clickedAt = Date.now();
       await allPlansChip(page).click();
-      const turn = await waitForChatRequest(
+      const turn = await waitForRequest(
         page,
-        (r) => !r.isReset && r.message === `All ${BONITAS} plans`,
+        chatRequests,
+        (r) => !r.isReset && !r.isContext && r.message === `All ${BONITAS} plans`,
         10_000,
       );
       const elapsed = turn.ts - clickedAt;
@@ -383,7 +416,62 @@ try {
     });
   });
 
-  // -- 5. Reload must not resume a previous scheme (regression) ------------
+  // -- 5. Composer context picker ------------------------------------------
+  await scenario('Composer context picker', async () => {
+    await step('opens a tree with schemes collapsed and All Schemes as root', async () => {
+      await openSchemePrompt(page);
+      await contextChip(page).click();
+      const dialog = pickerDialog(page);
+      await dialog.waitFor({ state: 'visible' });
+      await dialog.getByText('All Schemes', { exact: true }).waitFor({ state: 'visible' });
+      await dialog.getByText(BONITAS, { exact: true }).waitFor({ state: 'visible' });
+      expect(!(await dialog.getByText('BonComplete', { exact: true }).isVisible().catch(() => false)), 'Bonitas plans should start collapsed');
+    });
+
+    await step('expanding a scheme is not a selection (popover stays open)', async () => {
+      const before = contextRequests.length;
+      const dialog = pickerDialog(page);
+      await dialog.getByRole('button', { name: `Expand ${BONITAS}` }).click();
+      await dialog.getByText('BonComplete', { exact: true }).waitFor({ state: 'visible' });
+      expect(await dialog.isVisible(), 'popover closed on expand');
+      expect(contextRequests.length === before, 'expanding sent a context update');
+      expect((await chipLabel(page)) === 'All Schemes', 'expanding changed the chip');
+    });
+
+    await step('selecting a plan closes the popover and updates context silently', async () => {
+      const dialog = pickerDialog(page);
+      await dialog.getByText('BonComplete', { exact: true }).click();
+      await dialog.waitFor({ state: 'hidden' });
+      const req = await waitForRequest(
+        page,
+        contextRequests,
+        (r) => r.scheme === 'bonitas' && r.plan === 'boncomplete',
+      );
+      expect(req, 'no /api/chat/context request for the plan');
+      expect(
+        (await chipLabel(page)) === 'Bonitas › BonComplete',
+        `unexpected chip: ${await chipLabel(page)}`,
+      );
+    });
+
+    await step('"All Schemes" clears the agent-side context', async () => {
+      await contextChip(page).click();
+      const dialog = pickerDialog(page);
+      await dialog.getByText('All Schemes', { exact: true }).click();
+      await dialog.waitFor({ state: 'hidden' });
+      await waitForRequest(page, contextRequests, (r) => r.scheme === null && r.plan === null);
+      expect((await chipLabel(page)) === 'All Schemes', `unexpected chip: ${await chipLabel(page)}`);
+    });
+
+    await step('the cleared context makes the next question re-prompt for a scheme', async () => {
+      await send(page, FOLLOW_UP);
+      await waitForSchemeChips(page);
+      await waitForIdle(page);
+    });
+    await shot(page, '04-context-picker');
+  });
+
+  // -- 6. Reload must not resume a previous scheme (regression) ------------
   await scenario('Reload does not resume the previous scheme (regression)', async () => {
     await step('select a scheme and settle the plan window', async () => {
       await openSchemePrompt(page);
@@ -391,7 +479,7 @@ try {
       await waitForPlanDecision(page);
       await allPlansChip(page).click();
       await waitForIdle(page);
-      expect((await clearButton(page).count()) === 1, 'expected a scheme pill before reload');
+      expect((await chipLabel(page)) === 'Bonitas', `unexpected chip: ${await chipLabel(page)}`);
     });
     await step('session id is NOT persisted to localStorage', async () => {
       const stored = await page.evaluate(() => ({
@@ -402,12 +490,12 @@ try {
       const sessionLike = stored.keys.filter((k) => /session/i.test(k));
       expect(sessionLike.length === 0, `unexpected session-like localStorage keys: ${sessionLike}`);
     });
-    await step('page reload resets the transcript and header', async () => {
+    await step('page reload resets the transcript and chip', async () => {
       await page.reload({ waitUntil: 'domcontentloaded' });
       await page.getByText(/Hello! I can help you understand medical aid plans/i).waitFor({
         state: 'visible',
       });
-      await clearButton(page).waitFor({ state: 'hidden' });
+      expect((await chipLabel(page)) === 'All Schemes', `unexpected chip: ${await chipLabel(page)}`);
       expect(
         (await page.getByText('Select a scheme').count()) === 0,
         'scheme chips survived the reload',
@@ -433,56 +521,24 @@ try {
         'agent did not re-prompt for a scheme after reload',
       );
     });
-    await shot(page, '04-after-reload');
-  });
-
-  // -- 6. Clear-context button resets the agent-side scheme ----------------
-  await scenario('Clear-context button resets the agent-side scheme', async () => {
-    await step('select a scheme and settle the plan window', async () => {
-      await openSchemePrompt(page);
-      await schemeChip(page, DISCOVERY).click();
-      await waitForPlanDecision(page);
-      await allPlansChip(page).click();
-      await waitForIdle(page);
-      const pill = await pillText(page);
-      expect(/Discovery/.test(pill), `expected pill "Discovery", got "${pill}"`);
-    });
-    await step('clicking the X calls /api/chat/reset with a 2xx {ok:true}', async () => {
-      const respPromise = page.waitForResponse(
-        (r) => r.url().includes('/api/chat/reset') && r.request().method() === 'POST',
-        { timeout: 30_000 },
-      );
-      await clearButton(page).click();
-      const resp = await respPromise;
-      await clearButton(page).waitFor({ state: 'hidden' });
-      const body = await resp.text();
-      expect(resp.status() >= 200 && resp.status() < 300, `reset returned HTTP ${resp.status()}`);
-      expect(body.includes('"ok":true'), `reset body not ok: ${body}`);
-    });
-    await step('follow-up turn re-prompts for a scheme (context was cleared)', async () => {
-      await send(page, FOLLOW_UP);
-      await waitForSchemeChips(page);
-      await page.getByText('Select a scheme').waitFor({ state: 'visible' });
-      await waitForIdle(page);
-    });
-    await shot(page, '05-after-clear-context');
+    await shot(page, '05-after-reload');
   });
 
   // -- 7. "New chat" starts clean ------------------------------------------
   await scenario('"New chat" starts a clean conversation', async () => {
-    await step('new chat clears the transcript, pill and chips', async () => {
+    await step('new chat clears the transcript and resets the chip', async () => {
       await openSchemePrompt(page);
       await schemeChip(page, BONITAS).click();
       await waitForPlanDecision(page);
       await allPlansChip(page).click();
       await waitForIdle(page);
-      await clearButton(page).waitFor({ state: 'visible' });
+      expect((await chipLabel(page)) === 'Bonitas', `unexpected chip: ${await chipLabel(page)}`);
 
       await page.getByRole('button', { name: /New chat/i }).click();
       await page.getByText(/Hello! I can help you understand medical aid plans/i).waitFor({
         state: 'visible',
       });
-      await clearButton(page).waitFor({ state: 'hidden' });
+      expect((await chipLabel(page)) === 'All Schemes', `unexpected chip: ${await chipLabel(page)}`);
       expect(
         (await page.getByText('Select a scheme').count()) === 0,
         'scheme chips survived "New chat"',
