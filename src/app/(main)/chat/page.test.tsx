@@ -318,3 +318,41 @@ describe('ChatPage mirrors the agent context', () => {
     expect(setChatContextMock).not.toHaveBeenCalled();
   });
 });
+
+describe('ChatPage busy indicator', () => {
+  it('shows an investigating indicator until the assistant starts talking', async () => {
+    vi.useFakeTimers();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    streamMessageMock.mockReturnValueOnce(
+      (async function* () {
+        yield { type: 'session', sessionId: 's-test' };
+        await gate;
+        yield { type: 'text', delta: 'Here you go.' };
+        yield { type: 'done' };
+      })(),
+    );
+
+    render(<ChatPage />);
+
+    const textarea = screen.getByPlaceholderText(/Ask about medical aid plans/i);
+    fireEvent.change(textarea, { target: { value: 'What is covered?' } });
+    await act(async () => {
+      fireEvent.keyDown(textarea, { key: 'Enter' });
+    });
+    await flush();
+
+    // The turn is still running: the empty bubble shows a busy state.
+    expect(screen.getByRole('status')).toHaveTextContent('Investigating');
+
+    await act(async () => {
+      release();
+    });
+    await flush();
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.getByText('Here you go.')).toBeInTheDocument();
+  });
+});

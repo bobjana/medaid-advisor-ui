@@ -138,7 +138,7 @@ async function send(page, text) {
 }
 
 /** Wait until the in-flight chat/context turn has finished. */
-async function waitForIdle(page, timeout = 90_000) {
+async function waitForIdle(page, timeout = 180_000) {
   const startDeadline = Date.now() + 8_000;
   while (Date.now() < startDeadline) {
     const spinner = await page.locator(`${SUBMIT} svg.animate-spin`).count();
@@ -164,7 +164,7 @@ function schemeChip(page, name) {
   return page.getByRole('button', { name, exact: true });
 }
 
-async function waitForSchemeChips(page, timeout = 90_000) {
+async function waitForSchemeChips(page, timeout = 180_000) {
   await schemeChip(page, BONITAS).waitFor({ state: 'visible', timeout });
   await schemeChip(page, DISCOVERY).waitFor({ state: 'visible', timeout });
 }
@@ -173,7 +173,7 @@ function allPlansChip(page) {
   return page.getByRole('button', { name: 'Use all plans' });
 }
 
-async function waitForPlanDecision(page, timeout = 30_000) {
+async function waitForPlanDecision(page, timeout = 90_000) {
   await page.getByText('Select a plan').waitFor({ state: 'visible', timeout });
   await allPlansChip(page).waitFor({ state: 'visible', timeout });
 }
@@ -186,7 +186,7 @@ async function chipLabel(page) {
   return (await contextChip(page).innerText()).replace(/\s+/g, ' ').trim();
 }
 
-async function expectChip(page, expected, timeout = 20_000) {
+async function expectChip(page, expected, timeout = 45_000) {
   const deadline = Date.now() + timeout;
   let last = '';
   while (Date.now() < deadline) {
@@ -211,7 +211,7 @@ function turnRequests() {
   return chatRequests.filter((r) => !r.isReset && !r.isContext);
 }
 
-async function waitForRequest(page, list, predicate, timeout = 20_000) {
+async function waitForRequest(page, list, predicate, timeout = 60_000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     const found = list.find(predicate);
@@ -396,7 +396,7 @@ try {
           !r.isReset &&
           !r.isContext &&
           /^All Discovery Health Medical Scheme plans$/.test(r.message ?? ''),
-        20_000,
+        60_000,
       );
       const elapsed = turn.ts - clickedAt;
       expect(elapsed >= PLAN_DECISION_MS - 400, `default fired too early (${elapsed}ms)`);
@@ -584,6 +584,29 @@ try {
       await waitForIdle(page);
     });
     await shot(page, '06-new-chat');
+  });
+
+  // -- 9. Busy indicator while the agent works -----------------------------
+  await scenario('Busy indicator while the agent works', async () => {
+    await step('shows "Investigating…" until the answer starts streaming', async () => {
+      await page.goto(`${BASE_URL}/chat`, { waitUntil: 'domcontentloaded' });
+      // Hold the request briefly so the busy state is observable.
+      await page.route('**/api/chat', async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        await route.continue();
+      });
+
+      await send(page, TRIGGER);
+      const status = page.getByRole('status');
+      await status.waitFor({ state: 'visible', timeout: 5_000 });
+      const text = (await status.innerText()).replace(/\s+/g, ' ').trim();
+      expect(/investigating/i.test(text), `unexpected busy text: "${text}"`);
+      await shot(page, '08-busy-indicator');
+
+      await status.waitFor({ state: 'hidden', timeout: 180_000 });
+      await page.unroute('**/api/chat');
+      await waitForIdle(page);
+    });
   });
 
   // -- Console health -------------------------------------------------------

@@ -13,6 +13,7 @@ import { MarkdownMessage } from '@/components/chat/MarkdownMessage';
 import { Citations } from '@/components/chat/Citations';
 import { ContextSelector } from '@/components/chat/ContextSelector';
 import { ContextPicker, type ContextSelection } from '@/components/chat/ContextPicker';
+import { ThinkingIndicator } from '@/components/chat/ThinkingIndicator';
 
 const JSON_BLOCK_RE = /```(?:json)?\s*\{[\s\S]*?"(?:schemes|plans|type)"[\s\S]*?\}\s*```/g;
 
@@ -59,6 +60,7 @@ export default function ChatPage() {
   const [schemeCatalog, setSchemeCatalog] = useState<SchemeOption[]>(SCHEME_CATALOG);
   const [contextBusy, setContextBusy] = useState(false);
   const [pendingPlan, setPendingPlan] = useState<PendingPlan | null>(null);
+  const [pendingId, setPendingId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   // A page load always starts a fresh conversation: the session id is only
   // held in this ref for the lifetime of the page (set from the backend's
@@ -288,6 +290,7 @@ export default function ChatPage() {
     setLoading(true);
 
     const assistantId = randomUUID();
+    setPendingId(assistantId);
     setMessages((prev) => [
       ...prev,
       { id: assistantId, role: 'assistant', content: '' },
@@ -351,6 +354,7 @@ export default function ChatPage() {
           : 'An unexpected error occurred';
       setError(message);
     } finally {
+      setPendingId(null);
       setLoading(false);
     }
   }
@@ -437,12 +441,14 @@ export default function ChatPage() {
                     }
                   />
                 )}
-                {message.content && (
+                {message.content ? (
                   <MarkdownMessage
                     content={message.content}
                     className={message.role === 'user' ? 'text-primary-foreground' : ''}
                   />
-                )}
+                ) : message.id === pendingId ? (
+                  <ThinkingIndicator />
+                ) : null}
                 {message.citations && message.citations.length > 0 && (
                   <Citations citations={message.citations} />
                 )}
