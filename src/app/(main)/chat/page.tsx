@@ -457,7 +457,12 @@ export default function ChatPage() {
                 ) : message.id === pendingId ? (
                   <ThinkingIndicator />
                 ) : null}
-                {message.citations && message.citations.length > 0 && (
+                {/* The backend emits citations (from the RAG tool call) before
+                    the answer text streams in; only render the Sources list
+                    once the answer exists so it stays *below* the response. */}
+                {message.citations &&
+                  message.citations.length > 0 &&
+                  (message.content || message.id !== pendingId) && (
                   <Citations
                     citations={message.citations}
                     content={message.content}
