@@ -73,6 +73,23 @@ coverage:
 [group('quality')]
 check: typecheck lint test
 
+# ---- End-to-end (Playwright) ----
+
+# Verify scheme/plan context handling against the deployed GCP service
+[group('e2e')]
+e2e-gcp:
+	node scripts/e2e-scheme-context.mjs
+
+# Verify scheme/plan context handling against a local dev server
+[group('e2e')]
+e2e-local:
+	BASE_URL=http://localhost:3000 node scripts/e2e-scheme-context.mjs
+
+# Same as e2e-gcp but with a visible browser window (debugging)
+[group('e2e')]
+e2e-headed:
+	HEADED=1 node scripts/e2e-scheme-context.mjs
+
 # ---- Cleanup ----
 
 # Remove build artifacts

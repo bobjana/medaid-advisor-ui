@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import type { Citation, ContextOptions } from '@/types';
 import { getOrCreateUserId, streamMessage } from '@/lib/api';
-import { randomUUID } from '@/lib/utils';
+import { randomUUID, nowMs } from '@/lib/utils';
 import { MarkdownMessage } from '@/components/chat/MarkdownMessage';
 import { Citations } from '@/components/chat/Citations';
 import { ContextSelector } from '@/components/chat/ContextSelector';
@@ -18,6 +18,12 @@ const SCHEME_LABELS: Record<string, string> = {
   bonitas: 'Bonitas',
   discovery: 'Discovery',
 };
+
+/**
+ * How long the user gets to pick a specific plan after choosing a scheme
+ * before the turn continues with *all* of that scheme's plans.
+ */
+const PLAN_DECISION_MS = 3000;
 
 function stripContextJson(text: string): string {
   return text.replace(JSON_BLOCK_RE, '').trim();
@@ -38,13 +44,21 @@ const WELCOME_MESSAGE: Message = {
     'Hello! I can help you understand medical aid plans, benefits, and coverage options. What would you like to know?',
 };
 
+interface PendingPlan {
+  messageId: string;
+  schemeSlug: string;
+  schemeName: string;
+  /** Epoch ms when the default "All plans" choice is applied. */
+  deadline: number;
+}
+
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [contextOptions, setContextOptions] = useState<ContextOptions | null>(null);
   const [activeContext, setActiveContext] = useState<{ scheme?: string; plan?: string }>({});
+  const [pendingPlan, setPendingPlan] = useState<PendingPlan | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   // A page load always starts a fresh conversation: the session id is only
   // held in this ref for the lifetime of the page (set from the backend's
@@ -53,39 +67,129 @@ export default function ChatPage() {
   // scheme) while the transcript reset, so questions were answered for the
   // previous scheme instead of prompting for one.
   const sessionIdRef = useRef<string | undefined>(undefined);
+  const pendingPlanRef = useRef<PendingPlan | null>(null);
+  const planTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const planResolvedRef = useRef(true);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  function handleContextSelect(selection: string, type: 'scheme' | 'plan') {
-    if (type === 'scheme') {
-      const scheme = contextOptions?.schemes?.find((s) => s.name === selection);
-      if (scheme && scheme.plans.length > 0) {
-        const planOptions: ContextOptions = {
-          type: 'plan_selection',
-          plans: scheme.plans,
-          scheme: scheme.slug,
-        };
-        setContextOptions(planOptions);
-        setActiveContext({ scheme: scheme.slug });
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.contextOptions?.type === 'scheme_selection'
-              ? { ...m, contextOptions: planOptions }
-              : m,
-          ),
-        );
-      } else {
-        setActiveContext({ scheme: scheme?.slug ?? selection.toLowerCase() });
-      }
+  useEffect(
+    () => () => {
+      if (planTimerRef.current) clearTimeout(planTimerRef.current);
+    },
+    [],
+  );
+
+  function clearPlanTimer() {
+    if (planTimerRef.current) {
+      clearTimeout(planTimerRef.current);
+      planTimerRef.current = null;
     }
+  }
+
+  /**
+   * Settle (or cancel) a pending plan decision and drop the plan chips from
+   * the message they belong to. Returns the settled decision, or null.
+   */
+  function settlePlanDecision(): PendingPlan | null {
+    const pending = pendingPlanRef.current;
+    clearPlanTimer();
+    planResolvedRef.current = true;
+    pendingPlanRef.current = null;
+    setPendingPlan(null);
+    if (!pending) return null;
+    setMessages((prev) =>
+      prev.map((m) => (m.id === pending.messageId ? { ...m, contextOptions: undefined } : m)),
+    );
+    return pending;
+  }
+
+  function cancelPlanDecision() {
+    settlePlanDecision();
+  }
+
+  function startPlanDecision(messageId: string, schemeSlug: string, schemeName: string) {
+    clearPlanTimer();
+    planResolvedRef.current = false;
+    const pending: PendingPlan = {
+      messageId,
+      schemeSlug,
+      schemeName,
+      deadline: nowMs() + PLAN_DECISION_MS,
+    };
+    pendingPlanRef.current = pending;
+    setPendingPlan(pending);
+    planTimerRef.current = setTimeout(() => {
+      resolvePlanDecision({ kind: 'all' });
+    }, PLAN_DECISION_MS);
+  }
+
+  function resolvePlanDecision(choice: { kind: 'all' } | { kind: 'plan'; label: string }) {
+    if (planResolvedRef.current) return;
+    const pending = settlePlanDecision();
+    if (!pending) return;
+    if (choice.kind === 'all') {
+      setActiveContext({ scheme: pending.schemeSlug, plan: 'All plans' });
+      // Naming the scheme here makes the backend treat it as scheme-wide
+      // (plan unset), i.e. "all plans" for that scheme.
+      sendMessage(`All ${pending.schemeName} plans`);
+    } else {
+      setActiveContext({ scheme: pending.schemeSlug, plan: choice.label });
+      sendMessage(choice.label);
+    }
+  }
+
+  function handleContextSelect(
+    messageId: string,
+    options: ContextOptions | undefined,
+    selection: string,
+    type: 'scheme' | 'plan',
+  ) {
+    if (type === 'plan') {
+      if (pendingPlanRef.current) {
+        resolvePlanDecision({ kind: 'plan', label: selection });
+      } else {
+        // Plan options supplied directly by the backend (no default window).
+        setActiveContext((prev) => ({ ...prev, plan: selection }));
+        setMessages((prev) =>
+          prev.map((m) => (m.id === messageId ? { ...m, contextOptions: undefined } : m)),
+        );
+        sendMessage(selection);
+      }
+      return;
+    }
+
+    const scheme = options?.schemes?.find((s) => s.name === selection);
+    if (scheme && scheme.plans.length > 0) {
+      // Show this scheme's plans *below* it and give the user a short window
+      // to narrow down before continuing with all of them. Crucially, we do
+      // NOT hit the backend yet — otherwise the turn is answered for the whole
+      // scheme before the user has had a chance to pick a plan.
+      const planOptions: ContextOptions = {
+        type: 'plan_selection',
+        scheme: scheme.slug,
+        plans: scheme.plans,
+        schemes: options?.schemes,
+      };
+      setActiveContext({ scheme: scheme.slug });
+      setMessages((prev) =>
+        prev.map((m) => (m.id === messageId ? { ...m, contextOptions: planOptions } : m)),
+      );
+      startPlanDecision(messageId, scheme.slug, scheme.name);
+      return;
+    }
+
+    setActiveContext({ scheme: scheme?.slug ?? selection.toLowerCase() });
     sendMessage(selection);
   }
 
   async function sendMessage(text: string) {
     const trimmed = text.trim();
     if (!trimmed || loading) return;
+    // A new turn supersedes any pending plan decision.
+    if (pendingPlanRef.current) cancelPlanDecision();
 
     const userMessage: Message = {
       id: randomUUID(),
@@ -96,7 +200,6 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
     setError(null);
-    setContextOptions(null);
     setLoading(true);
 
     const assistantId = randomUUID();
@@ -132,19 +235,11 @@ export default function ChatPage() {
           sessionIdRef.current = event.sessionId;
         } else if (event.type === 'context_options') {
           finalOptions = event.options;
-          setContextOptions(event.options);
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantId ? { ...m, contextOptions: event.options } : m,
             ),
           );
-          // Derive active context from options.
-          if (event.options.type === 'scheme_selection' && event.options.schemes) {
-            const firstScheme = event.options.schemes[0];
-            if (firstScheme) {
-              setActiveContext({ scheme: firstScheme.slug });
-            }
-          }
         } else if (event.type === 'error') {
           setError(event.message);
         }
@@ -175,15 +270,15 @@ export default function ChatPage() {
   }
 
   function resetConversation() {
+    cancelPlanDecision();
     sessionIdRef.current = undefined;
     setMessages([WELCOME_MESSAGE]);
-    setContextOptions(null);
     setActiveContext({});
     setError(null);
   }
 
   async function clearContext() {
-    setContextOptions(null);
+    cancelPlanDecision();
     setActiveContext({});
     setMessages((prev) =>
       prev.map((m) => (m.contextOptions ? { ...m, contextOptions: undefined } : m)),
@@ -274,7 +369,18 @@ export default function ChatPage() {
                 {message.contextOptions && (
                   <ContextSelector
                     options={message.contextOptions}
-                    onSelect={handleContextSelect}
+                    onSelect={(selection, type) =>
+                      handleContextSelect(message.id, message.contextOptions, selection, type)
+                    }
+                    planDecision={
+                      pendingPlan && pendingPlan.messageId === message.id
+                        ? {
+                            durationMs: PLAN_DECISION_MS,
+                            deadline: pendingPlan.deadline,
+                            onSelectAll: () => resolvePlanDecision({ kind: 'all' }),
+                          }
+                        : undefined
+                    }
                   />
                 )}
                 {message.content && (

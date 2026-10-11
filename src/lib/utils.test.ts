@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cn } from './utils';
+import { cn, nowMs, randomUUID } from './utils';
 
 describe('cn', () => {
   it('returns a single class unchanged', () => {
@@ -36,5 +36,23 @@ describe('cn', () => {
 
   it('returns empty string when given no inputs', () => {
     expect(cn()).toBe('');
+  });
+});
+
+describe('nowMs', () => {
+  it('returns the current wall-clock time', () => {
+    const before = Date.now();
+    const value = nowMs();
+    const after = Date.now();
+    expect(value).toBeGreaterThanOrEqual(before);
+    expect(value).toBeLessThanOrEqual(after);
+  });
+});
+
+describe('randomUUID', () => {
+  it('returns a v4-shaped identifier', () => {
+    expect(randomUUID()).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
   });
 });

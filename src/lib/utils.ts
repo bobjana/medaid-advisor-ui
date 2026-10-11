@@ -7,6 +7,16 @@ export function cn(...inputs: ClassValue[]) {
 
 const HEX_CHARS = '0123456789abcdef';
 
+/**
+ * Wall-clock time in milliseconds.
+ *
+ * Wrapped in a module function because React Compiler treats a direct
+ * `Date.now()` call as an impure function and rejects it inside components.
+ */
+export function nowMs(): number {
+  return Date.now();
+}
+
 export function randomUUID(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
