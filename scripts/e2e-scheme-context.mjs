@@ -186,6 +186,17 @@ async function chipLabel(page) {
   return (await contextChip(page).innerText()).replace(/\s+/g, ' ').trim();
 }
 
+async function expectChip(page, expected, timeout = 20_000) {
+  const deadline = Date.now() + timeout;
+  let last = '';
+  while (Date.now() < deadline) {
+    last = await chipLabel(page);
+    if (last === expected) return;
+    await page.waitForTimeout(200);
+  }
+  throw new Error(`expected chip "${expected}", got "${last}"`);
+}
+
 function pickerDialog(page) {
   return page.getByRole('dialog', { name: 'Scheme and plan context' });
 }
@@ -471,7 +482,30 @@ try {
     await shot(page, '04-context-picker');
   });
 
-  // -- 6. Reload must not resume a previous scheme (regression) ------------
+  // -- 6. Agent context is mirrored from free text -------------------------
+  await scenario('Agent context is mirrored from free text', async () => {
+    await step('typing a scheme + plan updates the chip without the picker', async () => {
+      await page.goto(`${BASE_URL}/chat`, { waitUntil: 'domcontentloaded' });
+      await contextChip(page).waitFor({ state: 'visible' });
+      const before = contextRequests.length;
+      await send(page, 'I am on Bonitas BonComplete. What does it cover?');
+      await waitForIdle(page);
+      await expectChip(page, 'Bonitas › BonComplete');
+      expect(
+        !contextRequests.slice(before).some((r) => r.scheme === 'bonitas'),
+        'context was set via the endpoint rather than mirrored from the agent',
+      );
+    });
+    await step('"forget my scheme" clears the chip via the agent', async () => {
+      await send(page, 'forget my scheme');
+      await waitForSchemeChips(page);
+      await waitForIdle(page);
+      await expectChip(page, 'All Schemes');
+    });
+    await shot(page, '07-free-text-context');
+  });
+
+  // -- 7. Reload must not resume a previous scheme (regression) ------------
   await scenario('Reload does not resume the previous scheme (regression)', async () => {
     await step('select a scheme and settle the plan window', async () => {
       await openSchemePrompt(page);
@@ -524,7 +558,7 @@ try {
     await shot(page, '05-after-reload');
   });
 
-  // -- 7. "New chat" starts clean ------------------------------------------
+  // -- 8. "New chat" starts clean ------------------------------------------
   await scenario('"New chat" starts a clean conversation', async () => {
     await step('new chat clears the transcript and resets the chip', async () => {
       await openSchemePrompt(page);

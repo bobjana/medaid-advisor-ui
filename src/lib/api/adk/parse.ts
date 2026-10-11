@@ -1,4 +1,4 @@
-import type { Citation, ContextOptions, PlanOption, SchemeOption } from '@/types';
+import type { Citation, ContextOptions, ContextState, PlanOption, SchemeOption } from '@/types';
 
 /**
  * Extract an in-band error from a backend stream event.
@@ -92,7 +92,6 @@ export function extractCitations(event: unknown): Citation[] {
 }
 
 const JSON_FENCE_RE = /```(?:json)?\s*(\{[\s\S]*\})\s*```/;
-
 export function extractContextOptions(event: unknown): ContextOptions | null {
   if (!event || typeof event !== 'object') return null;
   const content = (event as { content?: unknown }).content;
@@ -133,4 +132,38 @@ export function extractContextOptions(event: unknown): ContextOptions | null {
     };
   }
   return null;
+}
+
+const SCHEME_STATE_KEY = 'selected_scheme';
+const PLAN_STATE_KEY = 'selected_plan';
+
+/**
+ * Extract the agent's scheme/plan context from an event's `actions.state_delta`.
+ *
+ * ADK records context-guard state changes as a state delta on the turn's first
+ * event (and a null delta when the context is reset), so the UI can mirror the
+ * agent's context even when it was inferred from free text rather than a chip
+ * click. Keys absent from the delta are left unchanged.
+ */
+export function extractContextState(event: unknown): ContextState | null {
+  if (!event || typeof event !== 'object') return null;
+  const actions = (event as { actions?: unknown }).actions;
+  if (!actions || typeof actions !== 'object') return null;
+
+  const raw = (actions as { state_delta?: unknown; stateDelta?: unknown });
+  const delta = raw.state_delta ?? raw.stateDelta;
+  if (!delta || typeof delta !== 'object' || Array.isArray(delta)) return null;
+
+  const record = delta as Record<string, unknown>;
+  const hasScheme = Object.prototype.hasOwnProperty.call(record, SCHEME_STATE_KEY);
+  const hasPlan = Object.prototype.hasOwnProperty.call(record, PLAN_STATE_KEY);
+  if (!hasScheme && !hasPlan) return null;
+
+  const asSlug = (value: unknown): string | null =>
+    typeof value === 'string' && value.length > 0 ? value : null;
+
+  const state: ContextState = {};
+  if (hasScheme) state.scheme = asSlug(record[SCHEME_STATE_KEY]);
+  if (hasPlan) state.plan = asSlug(record[PLAN_STATE_KEY]);
+  return state;
 }

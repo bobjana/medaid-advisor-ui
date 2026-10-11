@@ -1,7 +1,7 @@
 import { getStreamQueryUrl } from './env';
 import { getAuthToken } from './auth';
 import { ensureSessionId } from './sessions';
-import { extractCitations, extractContextOptions, extractError, extractText } from '../adk/parse';
+import { extractCitations, extractContextOptions, extractContextState, extractError, extractText } from '../adk/parse';
 import type { AgentEvent } from '../adk/events';
 
 export type { AgentEvent } from '../adk/events';
@@ -69,6 +69,8 @@ export async function* streamAgentQuery(
         if (citations.length > 0) yield { type: 'citations', citations };
         const options = extractContextOptions(parsed);
         if (options) yield { type: 'context_options', options };
+        const contextState = extractContextState(parsed);
+        if (contextState) yield { type: 'context_state', state: contextState };
       }
     }
     buffer += decoder.decode();
@@ -85,6 +87,8 @@ export async function* streamAgentQuery(
           if (citations.length > 0) yield { type: 'citations', citations };
           const options = extractContextOptions(parsed);
           if (options) yield { type: 'context_options', options };
+          const contextState = extractContextState(parsed);
+          if (contextState) yield { type: 'context_state', state: contextState };
         }
       } catch { /* ignore */ }
     }

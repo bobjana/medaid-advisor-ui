@@ -313,3 +313,27 @@ describe('streamAgentQuery citation extraction', () => {
     expect((citationEvents[0] as { citations: unknown[] }).citations).toHaveLength(1);
   });
 });
+
+describe('streamAgentQuery context state', () => {
+  it('emits the agent context state from actions.state_delta', async () => {
+    const line = JSON.stringify({
+      actions: { state_delta: { selected_scheme: 'bonitas', selected_plan: null } },
+    });
+    globalThis.fetch = vi.fn().mockResolvedValue(ndjsonResponse([line]));
+
+    const events = await collectEvents();
+
+    expect(events.filter((e) => e.type === 'context_state')).toEqual([
+      { type: 'context_state', state: { scheme: 'bonitas', plan: null } },
+    ]);
+  });
+
+  it('does not emit context_state for unrelated state deltas', async () => {
+    const line = JSON.stringify({ actions: { state_delta: { rag_search_cache: {} } } });
+    globalThis.fetch = vi.fn().mockResolvedValue(ndjsonResponse([line]));
+
+    const events = await collectEvents();
+
+    expect(events.filter((e) => e.type === 'context_state')).toHaveLength(0);
+  });
+});

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractError } from './parse';
+import { extractContextState, extractError } from './parse';
 
 describe('extractError', () => {
   it('formats ADK runtime errors with their error code', () => {
@@ -59,5 +59,46 @@ describe('extractError', () => {
   it('returns null for an empty error envelope', () => {
     expect(extractError({ error: { message: '   ' } })).toBeNull();
     expect(extractError({ error: {} })).toBeNull();
+  });
+});
+
+describe('extractContextState', () => {
+  const event = (state_delta: unknown) => ({ actions: { state_delta } });
+
+  it('reads a scheme + plan delta', () => {
+    expect(extractContextState(event({ selected_scheme: 'bonitas', selected_plan: 'boncomplete' }))).toEqual(
+      { scheme: 'bonitas', plan: 'boncomplete' },
+    );
+  });
+
+  it('treats null values as cleared', () => {
+    expect(extractContextState(event({ selected_scheme: null, selected_plan: null }))).toEqual({
+      scheme: null,
+      plan: null,
+    });
+  });
+
+  it('only includes keys present in the delta (absent = unchanged)', () => {
+    expect(extractContextState(event({ selected_scheme: 'discovery' }))).toEqual({
+      scheme: 'discovery',
+    });
+    expect(extractContextState(event({ selected_plan: null }))).toEqual({ plan: null });
+  });
+
+  it('accepts camelCase stateDelta (ADK dev server)', () => {
+    expect(
+      extractContextState({ actions: { stateDelta: { selected_scheme: 'bonitas' } } }),
+    ).toEqual({ scheme: 'bonitas' });
+  });
+
+  it('ignores deltas that do not touch the scheme/plan keys', () => {
+    expect(extractContextState(event({ rag_search_cache: { a: 1 } }))).toBeNull();
+    expect(extractContextState(event({}))).toBeNull();
+  });
+
+  it('returns null without actions', () => {
+    expect(extractContextState({ content: { parts: [{ text: 'hi' }] } })).toBeNull();
+    expect(extractContextState({ actions: {} })).toBeNull();
+    expect(extractContextState(null)).toBeNull();
   });
 });

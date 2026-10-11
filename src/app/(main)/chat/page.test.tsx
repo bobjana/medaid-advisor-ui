@@ -279,3 +279,42 @@ describe('ChatPage context picker', () => {
     expect(contextChip()).toHaveTextContent('All Schemes');
   });
 });
+
+describe('ChatPage mirrors the agent context', () => {
+  it('updates the chip from a streamed state delta (free text) and clears it on reset', async () => {
+    vi.useFakeTimers();
+    streamMessageMock.mockReturnValueOnce(
+      toStream([
+        { type: 'session', sessionId: 's-test' },
+        { type: 'context_state', state: { scheme: 'bonitas', plan: 'boncomplete' } },
+        { type: 'text', delta: 'BonComplete covers…' },
+        { type: 'done' },
+      ]),
+    );
+    streamMessageMock.mockReturnValueOnce(
+      toStream([
+        { type: 'context_state', state: { scheme: null, plan: null } },
+        { type: 'text', delta: 'Context cleared.' },
+        { type: 'done' },
+      ]),
+    );
+
+    render(<ChatPage />);
+
+    // The user typed a scheme rather than using a chip; the agent echoes its
+    // resulting context and the chip mirrors it.
+    await askSchemeQuestion();
+    expect(contextChip()).toHaveTextContent('Bonitas › BonComplete');
+
+    const textarea = screen.getByPlaceholderText(/Ask about medical aid plans/i);
+    fireEvent.change(textarea, { target: { value: 'forget my scheme' } });
+    await act(async () => {
+      fireEvent.keyDown(textarea, { key: 'Enter' });
+    });
+    await flush();
+
+    expect(contextChip()).toHaveTextContent('All Schemes');
+    // Mirroring never hits the context endpoint.
+    expect(setChatContextMock).not.toHaveBeenCalled();
+  });
+});

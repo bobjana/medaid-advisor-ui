@@ -69,4 +69,20 @@ describe('streamAdkQuery (local ADK backend)', () => {
     expect(events[0]).toEqual({ type: 'session', sessionId: 's-local' });
     expect(events[events.length - 1]).toEqual({ type: 'done' });
   });
+
+  it('emits the agent context state from a state delta', async () => {
+    globalThis.fetch = vi.fn().mockImplementation(async (url: unknown) => {
+      if (String(url).includes('/sessions')) return okResponse();
+      return sseResponse([
+        { actions: { state_delta: { selected_scheme: 'bonitas', selected_plan: 'boncomplete' } } },
+        { content: { parts: [{ text: 'ok' }] } },
+      ]);
+    });
+
+    const events = await collectEvents();
+
+    expect(events.filter((e) => e.type === 'context_state')).toEqual([
+      { type: 'context_state', state: { scheme: 'bonitas', plan: 'boncomplete' } },
+    ]);
+  });
 });

@@ -5,7 +5,7 @@ import { Send, Loader2, Stethoscope, RotateCcw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import type { Citation, ContextOptions, PlanOption, SchemeOption } from '@/types';
+import type { Citation, ContextOptions, ContextState, PlanOption, SchemeOption } from '@/types';
 import { setChatContext, streamMessage } from '@/lib/api';
 import { randomUUID, nowMs } from '@/lib/utils';
 import { SCHEME_CATALOG } from '@/lib/chat/scheme-catalog';
@@ -179,6 +179,44 @@ export default function ChatPage() {
     }
   }
 
+  /**
+   * Mirror the agent's session context (streamed as a state delta). This keeps
+   * the chip in sync when the context was set from free text — e.g. the user
+   * typed "I'm on Bonitas" instead of using the chips.
+   */
+  function applyContextState(state: ContextState) {
+    setActiveContext((prev) => {
+      if ('scheme' in state) {
+        const slug = state.scheme ?? undefined;
+        if (!slug) return {};
+        const scheme = schemeCatalog.find((s) => s.slug === slug);
+        const next: ContextSelection = {
+          schemeSlug: slug,
+          schemeName: scheme?.name ?? slug,
+          // A scheme change without an explicit plan is scheme-wide.
+          planId: undefined,
+          planName: undefined,
+        };
+        if ('plan' in state && state.plan) {
+          const plan = scheme?.plans.find((p) => p.id === state.plan);
+          next.planId = state.plan;
+          next.planName = plan?.name ?? state.plan;
+        }
+        return next;
+      }
+      if ('plan' in state) {
+        const id = state.plan ?? undefined;
+        if (!id) return { ...prev, planId: undefined, planName: undefined };
+        const scheme = prev.schemeSlug
+          ? schemeCatalog.find((s) => s.slug === prev.schemeSlug)
+          : undefined;
+        const plan = scheme?.plans.find((p) => p.id === id);
+        return { ...prev, planId: id, planName: plan?.name ?? id };
+      }
+      return prev;
+    });
+  }
+
   function handleContextSelect(
     messageId: string,
     options: ContextOptions | undefined,
@@ -291,6 +329,8 @@ export default function ChatPage() {
           if (event.options.schemes && event.options.schemes.length > 0) {
             setSchemeCatalog(event.options.schemes);
           }
+        } else if (event.type === 'context_state') {
+          applyContextState(event.state);
         } else if (event.type === 'error') {
           setError(event.message);
         }

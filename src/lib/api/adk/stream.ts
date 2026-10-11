@@ -1,7 +1,13 @@
 import { getLocalBackendUrl } from '../backend';
 import { randomUUID } from '@/lib/utils';
 import { createLocalSession } from './client';
-import { extractCitations, extractContextOptions, extractError, extractText } from './parse';
+import {
+  extractCitations,
+  extractContextOptions,
+  extractContextState,
+  extractError,
+  extractText,
+} from './parse';
 import type { AgentEvent } from './events';
 
 export interface AdkQueryInput {
@@ -23,6 +29,8 @@ function* emitEvent(event: unknown): Generator<AgentEvent> {
   if (citations.length > 0) yield { type: 'citations', citations };
   const options = extractContextOptions(event);
   if (options) yield { type: 'context_options', options };
+  const contextState = extractContextState(event);
+  if (contextState) yield { type: 'context_state', state: contextState };
 }
 
 function parseSseBlock(block: string): unknown[] {

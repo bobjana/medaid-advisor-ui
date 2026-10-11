@@ -45,11 +45,26 @@ export interface ContextOptions {
   scheme?: string;
 }
 
+/**
+ * The agent's scheme/plan context, mirroring its session state. Streamed as
+ * `actions.state_delta` on every turn so the UI can stay in sync even when the
+ * context was inferred from free text (e.g. "I'm on Bonitas").
+ *
+ * An omitted key means "unchanged"; `null` means "cleared".
+ */
+export interface ContextState {
+  /** Scheme slug (e.g. `bonitas`), or `null` when none is selected. */
+  scheme?: string | null;
+  /** Plan id (e.g. `boncomplete`), or `null` for scheme-wide / none. */
+  plan?: string | null;
+}
+
 export type ChatEvent =
   | { type: 'text'; delta: string }
   | { type: 'citations'; citations: Citation[] }
   | { type: 'session'; sessionId: string }
   | { type: 'context_options'; options: ContextOptions }
+  | { type: 'context_state'; state: ContextState }
   | { type: 'error'; message: string }
   | { type: 'done' };
 
