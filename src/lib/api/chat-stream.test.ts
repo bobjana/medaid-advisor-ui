@@ -286,6 +286,7 @@ describe('streamAgentQuery citation extraction', () => {
           title: 'discovery-keycare-plan-guide.pdf',
           uri: 'gs://bucket/plans/discovery-keycare-plan-guide.pdf',
           url: 'https://host/download?uri=gs%3A%2F%2Fbucket%2Fplans%2Fdiscovery-keycare-plan-guide.pdf',
+          excerpt: 'Unlimited hospital cover in KeyCare networks.',
         },
       ],
     });

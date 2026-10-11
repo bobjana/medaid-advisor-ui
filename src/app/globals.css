@@ -200,6 +200,59 @@ a {
     -webkit-backdrop-filter: blur(24px) saturate(180%);
 }
 
+/* ── Chat: numbered citation footnotes ───────────────────────────────── */
+/*
+ * Sources are numbered by first inline use; the marker jumps to that source's
+ * row in the "Sources" list at the foot of the message, and the row's number
+ * jumps back to the first inline use.
+ */
+.citation-marker {
+    vertical-align: super;
+    margin-left: 1px;
+    padding: 0 1px;
+    border: none;
+    background: none;
+    font-size: 0.7em;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--color-primary);
+    cursor: pointer;
+}
+
+.citation-marker:hover {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.citation-marker:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+    border-radius: 3px;
+}
+
+/* Separator between two directly adjacent markers, so "1" "2" reads as "1,2". */
+.citation-marker-sep {
+    vertical-align: super;
+    font-size: 0.7em;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--color-muted-foreground);
+}
+
+/* Highlight applied briefly to the marker or row a jump landed on. */
+.citation-flash {
+    background-color: var(--color-warning-container);
+    border-radius: 4px;
+    box-shadow: 0 0 0 3px var(--color-warning-container);
+    transition: background-color 200ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .citation-flash {
+        transition: none;
+    }
+}
+
 .ghost-border {
     border: 1px solid oklch(82% 0.018 257 / 0.15);
 }

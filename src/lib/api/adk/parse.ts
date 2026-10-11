@@ -56,9 +56,88 @@ export function extractText(event: unknown): string {
   return out;
 }
 
-const CITATION_BLOCK_RE =
-  /Source:\s*([^\n]+)\nSource URI:\s*(\S+)\nDownload:\s*(\S+)/g;
+const EXCERPT_MARKER_RE = /^\[Excerpt\s+\d+\]\s*$/im;
+const SOURCE_LINE_RE = /^Source\s*:\s*(.+?)\s*$/i;
+const URI_LINE_RE = /^Source\s+URI\s*:\s*(\S+)\s*$/i;
+const DOWNLOAD_LINE_RE = /^Download\s*:\s*(\S+)\s*$/i;
+const BLOCK_SEPARATOR_RE = /^\s*-{3,}\s*$/im;
 
+/** Cap on the stored excerpt length — enough for a preview card. */
+const MAX_EXCERPT_CHARS = 400;
+
+interface RawCitation {
+  title: string;
+  uri?: string;
+  url?: string;
+  excerpt?: string;
+}
+
+/**
+ * Parse one excerpt block's header lines.
+ *
+ * Headers are read from the top of the block and stop at the first line that is
+ * neither blank nor a recognised header, which starts the excerpt body. Only
+ * `Source:` is required: `Source URI:` and `Download:` are absent for sources
+ * that don't live in Cloud Storage. Returns null for blocks with no source —
+ * e.g. the tool's "No relevant excerpts found" message.
+ */
+function parseCitationBlock(block: string): RawCitation | null {
+  let title: string | undefined;
+  let uri: string | undefined;
+  let url: string | undefined;
+  const body: string[] = [];
+  let inBody = false;
+
+  for (const rawLine of block.split('\n')) {
+    const line = rawLine.trim();
+    if (!inBody) {
+      if (!line) continue;
+      const source = SOURCE_LINE_RE.exec(line);
+      if (source && title === undefined) {
+        title = source[1];
+        continue;
+      }
+      const sourceUri = URI_LINE_RE.exec(line);
+      if (sourceUri && uri === undefined) {
+        uri = sourceUri[1];
+        continue;
+      }
+      const download = DOWNLOAD_LINE_RE.exec(line);
+      if (download && url === undefined) {
+        url = download[1];
+        continue;
+      }
+      inBody = true;
+    }
+    if (line) body.push(line);
+  }
+
+  if (!title) return null;
+
+  const excerpt = body.join(' ').replace(/\s+/g, ' ').trim();
+  return {
+    title,
+    ...(uri ? { uri } : {}),
+    ...(url ? { url } : {}),
+    ...(excerpt ? { excerpt: excerpt.slice(0, MAX_EXCERPT_CHARS) } : {}),
+  };
+}
+
+/** Two citations are the same source when they share a download URL or URI. */
+function sameSource(a: Citation, b: Citation): boolean {
+  if (a.url && b.url) return a.url === b.url;
+  if (a.uri && b.uri) return a.uri === b.uri;
+  return false;
+}
+
+/**
+ * Extract the sources a tool call drew on from its `function_response` result.
+ *
+ * The result advertises one block per excerpt (`[Excerpt N]`, separated by `---`
+ * in the tool's formatted output); blocks are split tolerantly so a missing or
+ * reordered header line does not silently drop the source. Later blocks for the
+ * same document fill in anything the first block lacked.
+ */
 export function extractCitations(event: unknown): Citation[] {
   if (!event || typeof event !== 'object') return [];
   const content = (event as { content?: unknown }).content;
@@ -67,7 +146,6 @@ export function extractCitations(event: unknown): Citation[] {
   if (!Array.isArray(parts)) return [];
 
   const citations: Citation[] = [];
-  const seen = new Set<string>();
   for (const p of parts) {
     if (!p || typeof p !== 'object') continue;
     const fr = (p as { function_response?: unknown }).function_response;
@@ -77,15 +155,19 @@ export function extractCitations(event: unknown): Citation[] {
     const result = (response as { result?: unknown }).result;
     if (typeof result !== 'string') continue;
 
-    CITATION_BLOCK_RE.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = CITATION_BLOCK_RE.exec(result)) !== null) {
-      const title = match[1].trim();
-      const uri = match[2];
-      const url = match[3];
-      if (seen.has(url)) continue;
-      seen.add(url);
-      citations.push({ title, url, uri });
+    for (const block of result.split(EXCERPT_MARKER_RE)) {
+      for (const piece of block.split(BLOCK_SEPARATOR_RE)) {
+        const parsed = parseCitationBlock(piece);
+        if (!parsed) continue;
+        const existing = citations.find((c) => sameSource(c, parsed));
+        if (!existing) {
+          citations.push(parsed);
+          continue;
+        }
+        if (!existing.uri && parsed.uri) existing.uri = parsed.uri;
+        if (!existing.url && parsed.url) existing.url = parsed.url;
+        if (!existing.excerpt && parsed.excerpt) existing.excerpt = parsed.excerpt;
+      }
     }
   }
   return citations;

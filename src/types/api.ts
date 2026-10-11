@@ -12,15 +12,34 @@ export interface ChatResponse {
 
 /**
  * A source document backing an assistant answer (e.g. a Discovery plan guide PDF).
- * Emitted by the agent's RAG tool and surfaced as a small link in the chat UI.
+ * Emitted by the agent's RAG tool and surfaced as a numbered footnote in the
+ * chat UI that links to the original PDF.
+ *
+ * The agent formats each retrieved excerpt as:
+ *
+ *     [Excerpt 1]
+ *     Source: discovery-keycare-plan-guide.pdf
+ *     Source URI: gs://bucket/plans/discovery-keycare-plan-guide.pdf
+ *     Download: https://host/download?uri=gs%3A%2F%2Fbucket%2F...
+ *
+ * `Source URI` and `Download` are only emitted for `gs://` sources, so both are
+ * optional here.
  */
 export interface Citation {
   /** Human-readable name, e.g. the PDF filename. */
   title: string;
-  /** Absolute URL the browser can open to download/view the source. */
-  url: string;
+  /**
+   * Absolute URL the browser can open to download/view the source. Absent when
+   * the agent could not produce a download link (non-`gs://` storage URIs).
+   */
+  url?: string;
   /** Original storage URI (e.g. `gs://bucket/path/file.pdf`), when available. */
   uri?: string;
+  /**
+   * Short excerpt from the retrieved chunk, used as the preview text when the
+   * reader inspects a citation. Captured from the same tool result.
+   */
+  excerpt?: string;
 }
 
 /**

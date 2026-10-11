@@ -75,6 +75,16 @@ check: typecheck lint test
 
 # ---- End-to-end (Playwright) ----
 
+# Serve a scripted chat stream, so the UI can be exercised without the real agent
+[group('e2e')]
+mock-adk:
+	node scripts/mock-adk-server.mjs 8123
+
+# Run the UI against that mock instead of Vertex (`just mock-adk` in another shell)
+[group('e2e')]
+dev-mock:
+	CHAT_BACKEND=local NEXT_PUBLIC_API_BASE_URL=http://localhost:8123 npm run dev
+
 # Verify scheme/plan context handling against the deployed GCP service
 [group('e2e')]
 e2e-gcp:

@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mockup — Inline citations as numbered footnotes → "Sources" list</title>
+<style>
+  :root{
+    --primary:#2f43c8;
+    --primary-weak:#eef0fd;
+    --primary-border:#c9cff7;
+    --surface:#f4f5f9;
+    --card:#ffffff;
+    --line:#e4e6ee;
+    --muted:#6b7280;
+    --text:#111827;
+    --danger:#dc2626;
+    --flash:#fff6d8;
+    --flash-line:#f0c65c;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+    background:var(--surface);color:var(--text);padding:28px;
+  }
+  h1{font-size:18px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:16px;max-width:1100px;line-height:1.5}
+  .wrap{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap}
+
+  /* ---------- toolbar ---------- */
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
+  .toolbar button{font-size:12px;padding:7px 11px;border-radius:9px;border:1px solid var(--line);background:#fff;cursor:pointer;font-weight:600;color:var(--text)}
+  .toolbar button:hover{background:#f6f7fb}
+  .toolbar button.on{background:var(--primary);color:#fff;border-color:var(--primary)}
+  .toolbar .sep{width:1px;height:22px;background:var(--line);margin:0 4px}
+  .toolbar .lab{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700;margin-right:2px}
+
+  /* ---------- fake app card ---------- */
+  .app{
+    width:720px;max-width:100%;background:var(--card);border:1px solid var(--line);border-radius:18px;
+    box-shadow:0 10px 30px rgba(17,24,39,.08);overflow:hidden;display:flex;flex-direction:column;
+    height:780px;position:relative;transition:width .2s ease;
+  }
+  .app.narrow{width:390px;height:800px}
+  .app-head{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line)}
+  .brand{display:flex;align-items:center;gap:10px}
+  .logo{width:28px;height:28px;border-radius:8px;background:var(--primary);color:#fff;display:grid;place-items:center;font-size:14px}
+  .brand b{font-size:14px}
+  .brand span{display:block;font-size:11px;color:var(--muted)}
+  .newchat{font-size:12px;font-weight:600;color:var(--primary);background:var(--primary-weak);border:1px solid var(--primary-border);border-radius:999px;padding:6px 12px;white-space:nowrap}
+
+  .body{flex:1;display:flex;min-height:0}
+  .chat{flex:1;overflow:auto;padding:18px;display:flex;flex-direction:column;gap:14px;background:linear-gradient(#fbfbfd,#f7f8fc)}
+  .msg{display:flex;gap:10px;max-width:92%}
+  .msg.user{align-self:flex-end;flex-direction:row-reverse}
+  .av{width:30px;height:30px;border-radius:9px;background:var(--primary-weak);color:var(--primary);display:grid;place-items:center;flex:0 0 auto;font-size:13px}
+  .bubble{padding:10px 14px;border-radius:16px;font-size:13.5px;line-height:1.55;min-width:0}
+  .msg.assistant .bubble{background:#fff;border:1px solid var(--line)}
+  .msg.user .bubble{background:var(--primary);color:#fff}
+  .bubble h4{margin:0 0 6px;font-size:13.5px}
+  .bubble p{margin:6px 0}
+  .bubble ul{margin:6px 0;padding-left:18px}
+  .bubble li{margin:4px 0}
+  .bubble p:first-child{margin-top:0}
+  .bubble p:last-child{margin-bottom:0}
+
+  /* ---------- inline markers ---------- */
+  .cite{
+    text-decoration:none;cursor:pointer;font-weight:700;color:var(--primary);
+    display:inline-block;margin-left:1px;
+  }
+  /* style A — superscript numeral */
+  .marker{font-size:9.5px;line-height:1;vertical-align:super;padding:0 1px}
+  .marker:hover{text-decoration:underline}
+  /* style B — pill badge */
+  .app[data-marker="pill"] .marker{
+    font-size:10px;vertical-align:baseline;line-height:1;padding:1px 4px;border-radius:5px;
+    background:var(--primary-weak);border:1px solid var(--primary-border);
+  }
+  .app[data-marker="pill"] .marker:hover{background:#e0e5fb;text-decoration:none}
+  /* style C — inline chip with filename */
+  .app[data-view="chips"] .cite,
+  .app[data-view="chips"] .marker{
+    display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:600;
+    vertical-align:baseline;padding:1px 7px 1px 5px;border-radius:999px;margin:0 2px;
+    background:var(--primary-weak);border:1px solid var(--primary-border);max-width:230px;
+  }
+  .app[data-view="chips"] .cite .fname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .app[data-view="chips"] .cite svg{flex:0 0 auto}
+
+  .cite.flash{background:var(--flash);border-radius:4px;box-shadow:0 0 0 3px var(--flash);transition:background .2s}
+  .src-row.flash{background:var(--flash);border-color:var(--flash-line)}
+
+  /* ---------- sources footer (in-bubble) ---------- */
+  .sources{margin-top:12px;border-top:1px dashed var(--line);padding-top:9px}
+  .sources-head{display:flex;align-items:center;gap:7px;margin-bottom:6px}
+  .sources-head b{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+  .sources-head .count{font-size:10px;font-weight:700;color:var(--primary);background:var(--primary-weak);border:1px solid var(--primary-border);border-radius:999px;padding:1px 6px}
+  .src-row{display:flex;gap:9px;align-items:flex-start;padding:6px 8px;border-radius:10px;border:1px solid transparent;cursor:default}
+  .src-row+.src-row{margin-top:2px}
+  .src-row:hover{background:#f8f9fd;border-color:var(--line)}
+  .src-num{
+    flex:0 0 auto;width:17px;height:17px;border-radius:5px;background:var(--primary-weak);color:var(--primary);
+    border:1px solid var(--primary-border);font-size:10px;font-weight:700;display:grid;place-items:center;
+    cursor:pointer;margin-top:1px;
+  }
+  .src-main{flex:1;min-width:0}
+  .src-title{font-size:12.5px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .src-meta{font-size:10.5px;color:var(--muted);margin-top:1px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .src-meta .dot{width:3px;height:3px;border-radius:99px;background:#c3c7d4;display:inline-block}
+  .src-open{
+    flex:0 0 auto;display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;color:var(--primary);
+    background:var(--primary-weak);border:1px solid var(--primary-border);border-radius:7px;padding:4px 8px;
+    text-decoration:none;white-space:nowrap;
+  }
+  .src-open:hover{background:#e0e5fb}
+  .src-uncited .src-num{background:#f3f4f8;border-color:var(--line);color:#8b91a1}
+  .src-uncited .src-title{color:#4b5563;font-weight:500}
+  .uncited-head{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700;margin:9px 0 2px;padding-left:8px}
+
+  /* ---------- sources side panel (variant) ---------- */
+  .panel{display:none;width:250px;flex:0 0 auto;border-left:1px solid var(--line);background:#fff;flex-direction:column}
+  .app[data-view="panel"] .panel{display:flex}
+  .panel-head{padding:11px 13px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+  .panel-head b{font-size:12.5px}
+  .panel-head span{font-size:10.5px;color:var(--muted)}
+  .panel-list{overflow:auto;padding:8px}
+  .p-item{padding:8px;border-radius:10px;border:1px solid var(--line);margin-bottom:6px;background:#fff}
+  .p-item:hover{background:#f8f9fd}
+  .p-top{display:flex;gap:7px;align-items:flex-start}
+  .p-title{font-size:12px;font-weight:600;line-height:1.35;word-break:break-word}
+  .p-meta{font-size:10px;color:var(--muted);margin-top:3px}
+
+  /* ---------- current behaviour (before) ---------- */
+  .legacy-row{display:none;flex-wrap:wrap;align-items:center;gap:6px;margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}
+  .app[data-view="legacy"] .legacy-row{display:flex}
+  .app[data-view="legacy"] .sources{display:none}
+  .app[data-view="legacy"] .cite{font-weight:400;text-decoration:underline;color:var(--primary);display:inline;margin:0}
+  .app[data-view="legacy"] .cite::before{content:""}
+  .legacy-lab{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:700;margin-right:2px}
+  .chip{
+    display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--primary);
+    background:var(--primary-weak);border:1px solid var(--primary-border);border-radius:999px;padding:2px 9px;
+    text-decoration:none;max-width:100%;
+  }
+  .chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px}
+
+  /* ---------- hover preview ---------- */
+  .preview{
+    position:fixed;z-index:60;width:300px;background:#fff;border:1px solid var(--line);border-radius:13px;
+    box-shadow:0 18px 44px rgba(17,24,39,.18);padding:11px 12px;display:none;
+  }
+  .preview.on{display:block}
+  .preview b{font-size:12px;display:block;line-height:1.35;word-break:break-word}
+  .preview .pv-meta{font-size:10.5px;color:var(--muted);margin-top:3px}
+  .preview .pv-snip{
+    font-size:11.5px;line-height:1.5;color:#374151;margin-top:7px;padding:7px 8px;background:#f7f8fc;
+    border-left:2px solid var(--primary-border);border-radius:0 7px 7px 0;
+  }
+  .preview .pv-foot{display:flex;justify-content:space-between;align-items:center;margin-top:8px;gap:8px}
+  .preview .pv-uses{font-size:10px;color:var(--muted)}
+
+  /* ---------- composer ---------- */
+  .composer{border-top:1px solid var(--line);padding:12px 14px;background:#fff}
+  .composer form{display:flex;gap:8px;align-items:flex-end}
+  .input{flex:1;min-height:44px;display:flex;align-items:center;padding:11px 14px;border:1px solid var(--line);border-radius:12px;color:#9ca3af;font-size:13.5px}
+  .send{width:44px;height:44px;border-radius:12px;background:var(--primary);color:#fff;display:grid;place-items:center;flex:0 0 auto;border:none}
+  .chipbtn{display:inline-flex;align-items:center;gap:6px;height:44px;padding:0 11px;border-radius:12px;border:1px solid var(--primary-border);background:var(--primary-weak);color:var(--primary);font-size:12px;font-weight:700;white-space:nowrap}
+
+  /* ---------- notes ---------- */
+  .notes{width:420px;font-size:13px;line-height:1.55;color:#374151}
+  .notes h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 8px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:12px}
+  .card h4{margin:0 0 6px;font-size:13px}
+  .card ol,.card ul{margin:6px 0 0;padding-left:18px}
+  .card li{margin:5px 0}
+  .card code{background:#f3f4f8;border:1px solid var(--line);border-radius:4px;padding:1px 4px;font-size:11.5px}
+  .ok{color:#0f766e;font-weight:700}
+  .no{color:var(--danger);font-weight:700}
+  .ask{color:#b45309;font-weight:700}
+  .kv{display:grid;grid-template-columns:96px 1fr;gap:4px 8px;font-size:12px;margin-top:6px}
+  .kv div:nth-child(odd){color:var(--muted);font-weight:600}
+  .decision{border-left:3px solid var(--primary-border);padding-left:10px;margin:10px 0}
+  .decision b{display:block;font-size:12.5px}
+  .decision p{margin:4px 0 0;font-size:12px;color:#4b5563}
+</style>
+</head>
+<body>
+
+<h1>Mockup — Inline citations as numbered footnotes → “Sources” list</h1>
+<p class="sub">
+  Every grounded claim in the answer carries a superscript number; the number resolves to a
+  numbered row at the foot of the message that opens the original PDF. Answer text below is
+  <b>illustrative</b>; the document set is real (from <code>medaid-advisor-docs/plans</code>) so the
+  filename lengths are realistic.
+</p>
+
+<div class="toolbar">
+  <span class="lab">View</span>
+  <button data-view="footnote" class="on">Superscript + list</button>
+  <button data-view="chips">Inline filename chips</button>
+  <button data-view="panel">Sources side panel</button>
+  <button data-view="legacy">Current UI (before)</button>
+  <span class="sep"></span>
+  <span class="lab">Marker</span>
+  <button data-marker="super" class="on">Superscript</button>
+  <button data-marker="pill">Tiny pill</button>
+  <span class="sep"></span>
+  <span class="lab">Numbering</span>
+  <button data-num="first-use" class="on">First use</button>
+  <button data-num="retrieval">Retrieval rank</button>
+  <span class="sep"></span>
+  <button id="narrowBtn">Narrow (390px)</button>
+  <button id="hoverBtn" class="on">Hover preview</button>
+</div>
+
+<div class="wrap">
+  <!-- ======================= fake app ======================= -->
+  <div class="app" id="app" data-view="footnote" data-marker="super" data-num="first-use">
+    <div class="app-head">
+      <div class="brand">
+        <div class="logo">✚</div>
+        <div><b>Medical Aid Advisor Chat</b><span>Grounded advice &amp; scheme comparison engine</span></div>
+      </div>
+      <div class="newchat">↺ New chat</div>
+    </div>
+
+    <div class="body">
+      <div class="chat" id="chat">
+        <div class="msg user">
+          <div class="bubble">I'm on Discovery KeyCare Plus — what hospital cover do I get, and how does it compare to Priority?</div>
+        </div>
+
+        <div class="msg assistant">
+          <div class="av">✚</div>
+          <div class="bubble" id="answer">
+            <h4>KeyCare Plus — hospital cover</h4>
+            <p>KeyCare Plus gives you <b>unlimited hospital cover</b> when you use the KeyCare network of
+              hospitals, with no overall annual limit.<a class="cite" data-doc="keycare"></a>
+              The trade-off is network-only access: out-of-network admissions are not covered unless it is an
+              emergency or pre-authorised.<a class="cite" data-doc="keycare"></a></p>
+
+            <p>What is included:</p>
+            <ul>
+              <li><b>Unlimited hospital cover</b> at KeyCare network hospitals — no annual limit, no day-to-day limits on in-hospital procedures.<a class="cite" data-doc="keycare"></a></li>
+              <li><b>27 chronic conditions</b> on the Chronic Illness Benefit, subject to registration before you claim.<a class="cite" data-doc="keycare"></a></li>
+              <li><b>Day-to-day benefits</b> paid from a Medical Savings Account, not from the plan's risk pool.<a class="cite" data-doc="priority"></a></li>
+            </ul>
+
+            <h4>How it compares to Priority</h4>
+            <p>Priority is the entry-level KeyCare option and is priced slightly lower, but its hospital cover
+              is limited to a <b>R2,2 million</b> annual limit across the Priority network.<a class="cite" data-doc="priority"></a>
+              Both plans share the same KeyCare network and the same chronic-condition list.<a class="cite" data-doc="keycare"></a><a class="cite" data-doc="priority"></a></p>
+
+            <p>If you are likely to need one or more hospital admissions a year, KeyCare Plus is the safer
+              choice because the hospital benefit has no ceiling.<a class="cite" data-doc="comprehensive"></a></p>
+
+            <div class="sources">
+              <div class="sources-head">
+                <b id="srcHeading">Sources</b>
+                <span class="count" id="srcCount">0</span>
+              </div>
+              <div id="srcList"></div>
+              <div class="uncited-head" id="uncitedHead" hidden>Also consulted</div>
+              <div id="srcUncited"></div>
+            </div>
+
+            <div class="legacy-row">
+              <span class="legacy-lab">Sources</span>
+              <a class="chip" href="#"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg><span>discovery-health-medical-scheme-keycare-plan-guide.pdf</span>↗</a>
+              <a class="chip" href="#"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg><span>discovery-health-medical-scheme-priority-plan-guide.pdf</span>↗</a>
+              <a class="chip" href="#"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg><span>discovery-health-medical-scheme-comprehensive-plan-guide.pdf</span>↗</a>
+              <a class="chip" href="#"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg><span>Boncap-2026.pdf</span>↗</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><b>Sources</b><span id="panelCount">0 documents</span></div>
+        <div class="panel-list" id="panelList"></div>
+      </div>
+    </div>
+
+    <div class="composer">
+      <form onsubmit="return false">
+        <div class="chipbtn">◎ Discovery · KeyCare Plus</div>
+        <div class="input">Ask about medical aid plans, benefits, or coverage…</div>
+        <button class="send">➤</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ======================= notes ======================= -->
+  <div class="notes">
+    <h3>Backend — verified</h3>
+    <div class="card">
+      <p style="margin:0 0 4px">The two things you asked me to confirm are both already coming back from the agent:</p>
+      <div class="kv">
+        <div>Tool output</div><div><code>medaid_advisor_agent/agent.py:196–206</code> emits, per excerpt:<br>
+          <code>[Excerpt 1]</code><br><code>Source: &lt;filename&gt;</code><br><code>Source URI: gs://…</code><br><code>Download: &lt;base&gt;/download?uri=…</code></div>
+        <div>PDF link</div><div><span class="ok">Yes.</span> <code>_download_url()</code> builds <code>/download?uri=&lt;url-encoded gs://…&gt;</code>; the download service serves it <code>inline; filename=…</code>, so it opens the original PDF in a new tab (that's your <code>citation-pdf-viewer.png</code>).</div>
+        <div>UI today</div><div><code>extractCitations()</code> (<code>src/lib/api/adk/parse.ts:59</code>) parses those blocks out of the <code>function_response</code> into <code>{title, url, uri}</code> and streams a <code>citations</code> event.</div>
+        <div>Inline part</div><div><span class="no">Not wired.</span> The prompt tells the model to inline-link <code>[filename](Download URL)</code> (<code>agent.py:361</code>), and those links do render — but they render as plain markdown links <i>and</i> are repeated in the chip row below. No numbers, no anchor between prose and list.</div>
+      </div>
+    </div>
+
+    <h3>How it would work</h3>
+    <div class="card">
+      <ol>
+        <li>Build a per-message registry from the <code>citations</code> event (already deduped by URL).</li>
+        <li>In the markdown renderer, intercept links whose <code>href</code> matches a registry <code>url</code> — with a fallback match on decoded <code>uri</code> or filename — and render them as a numbered marker instead of a link.</li>
+        <li>Render the numbered list at the foot of the bubble; the number scrolls to it, and the number in the list scrolls back to the first inline use.</li>
+        <li>Prompt change: ask the model to cite <i>every</i> grounded claim, not just once per answer.</li>
+      </ol>
+    </div>
+
+    <h3>Decisions I need from you</h3>
+    <div class="card">
+      <div class="decision">
+        <b>1. Numbering order — “First use” (shown) vs “Retrieval rank”</b>
+        <p><b>First use:</b> numbers match reading order, nothing is listed that isn't cited — but the list
+          renumbers when it settles and sources arrive <i>before</i> the text finishes streaming (the
+          <code>function_response</code> precedes the answer), so numbers briefly shift.</p>
+        <p><b>Retrieval rank:</b> number = RAG rank, stable for the whole turn, list is complete from the first
+          byte — but you can get a list of 4 where only 1 and 3 are cited inline.</p>
+      </div>
+      <div class="decision">
+        <b>2. Retrieved-but-never-cited documents</b>
+        <p>Shown above as a muted “Also consulted” group (no number). Alternatives: hide them, or number
+          everything and accept unused numbers. I'd hide them once streaming settles, keep them while streaming.</p>
+      </div>
+      <div class="decision">
+        <b>3. What the row says</b>
+        <p>Currently: filename only. Suggested meta line: <i>scheme › plan · guide</i>. The backend gives no page
+          number or section, so we cannot show “p. 14” — see the enhancement note below.</p>
+      </div>
+      <div class="decision">
+        <b>4. Hover preview</b>
+        <p>Marker → small card with filename, meta, and an excerpt snippet. The snippet needs one backend
+          addition (the tool result already contains the excerpt body; the parser drops it). Say the word and
+          I'll widen the <code>citations</code> event with an <code>excerpt</code> field.</p>
+      </div>
+      <div class="decision">
+        <b>5. Wording</b>
+        <p>You said “list of resources”; the build says “Sources”. <code>Sources (3)</code> is shown — one word
+          to change if you prefer <i>Resources</i> or <i>Plan guides</i>.</p>
+      </div>
+    </div>
+
+    <h3>Edge cases the mockup covers</h3>
+    <div class="card">
+      <ul>
+        <li><b>Long filenames</b> — <code>discovery-health-medical-scheme-comprehensive-plan-guide.pdf</code> truncates in the row (full name in the title tooltip). Try <i>Narrow</i> and the <i>chips</i> view.</li>
+        <li><b>Repeated citation</b> — the same document cited 4× shares one number.</li>
+        <li><b>Multiple at one claim</b> — two adjacent numbers render as <sup>1,2</sup>.</li>
+        <li><b>Model forgets to inline-link</b> — graceful fallback: the list still renders (old behaviour), just unnumbered. Nothing breaks.</li>
+        <li><b>URL matching</b> — the model sometimes re-encodes or truncates the long download URL. Matching must normalise (decode, compare <code>uri</code> query param, then filename) rather than comparing raw strings.</li>
+        <li><b>Sources without a download link</b> — non-<code>gs://</code> sources produce no <code>Download:</code> line (<code>agent.py:206</code>); those rows must be non-clickable.</li>
+        <li><b>Filthy filenames in the corpus</b> — e.g. <i>“Bestmed 2026 Comparative Guide (1).pdf”</i>, <i>“discovery-health-medical-scheme-executive-plan- guide 2026.pdf”</i>. Worth a display-title cleanup (strip extension, title-case, drop <code>(1)</code>).</li>
+        <li><b>Zero citations</b> — pricing answers come from <code>list_plans</code>/<code>get_plan_pricing</code>, not RAG, so the sources block must disappear entirely, not render empty.</li>
+      </ul>
+    </div>
+
+    <h3>Three things I'd fix while in there</h3>
+    <div class="card">
+      <ul>
+        <li><code>CITATION_BLOCK_RE</code> requires the three lines in exact order with no tolerance — a single
+          missing <code>Download:</code> line silently drops the source. Make <code>Download:</code> optional and the URI line tolerant.</li>
+        <li>An answer spanning two tool calls replaces the citation list rather than merging it
+          (<code>finalCitations = event.citations</code>). Merge + dedupe per turn.</li>
+        <li>Deep-links: <code>/download?uri=…</code> opens page 1. If we ever want “jump to the cited page”
+          we need page metadata from the RAG chunks — not available today.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="preview" id="preview">
+  <b id="pvTitle"></b>
+  <div class="pv-meta" id="pvMeta"></div>
+  <div class="pv-snip" id="pvSnip"></div>
+  <div class="pv-foot">
+    <span class="pv-uses" id="pvUses"></span>
+    <a class="src-open" id="pvOpen" target="_blank" rel="noopener">Open PDF ↗</a>
+  </div>
+</div>
+
+<script>
+const BASE = 'https://medaid-download-737649281649.africa-south1.run.app';
+const enc = (u) => BASE + '/download?uri=' + encodeURIComponent(u);
+
+const DOCS = [
+  { id:'keycare', rank:1, title:'discovery-health-medical-scheme-keycare-plan-guide.pdf',
+    scheme:'Discovery Health', plan:'KeyCare', kind:'Plan guide',
+    uri:'gs://medaid-plan-guides/discovery/discovery-health-medical-scheme-keycare-plan-guide.pdf',
+    snippet:'Unlimited hospital cover at KeyCare network hospitals for KeyCare Plus, with no overall annual limit. Out-of-network admissions are covered only in an emergency or with pre-authorisation.' },
+  { id:'priority', rank:2, title:'discovery-health-medical-scheme-priority-plan-guide.pdf',
+    scheme:'Discovery Health', plan:'Priority', kind:'Plan guide',
+    uri:'gs://medaid-plan-guides/discovery/discovery-health-medical-scheme-priority-plan-guide.pdf',
+    snippet:'Priority hospital benefit is limited to R2 200 000 per beneficiary per year across the Priority network. Day-to-day benefits are funded from the Medical Savings Account.' },
+  { id:'comprehensive', rank:3, title:'discovery-health-medical-scheme-comprehensive-plan-guide.pdf',
+    scheme:'Discovery Health', plan:'Comprehensive', kind:'Plan guide',
+    uri:'gs://medaid-plan-guides/discovery/discovery-health-medical-scheme-comprehensive-plan-guide.pdf',
+    snippet:'The Comprehensive plan offers unlimited hospital cover at any private hospital, a Medical Savings Account and above-threshold benefits.' },
+  { id:'boncap', rank:4, title:'Boncap-2026.pdf',
+    scheme:'Bonitas', plan:'BonCap', kind:'Plan guide',
+    uri:'gs://medaid-plan-guides/bonitas/Boncap-2026.pdf',
+    snippet:'BonCap is an income-tiered option: the monthly contribution is determined by household income and the number of dependants.' },
+].map(d => ({ ...d, url: enc(d.uri) }));
+
+const byId = Object.fromEntries(DOCS.map(d => [d.id, d]));
+const app = document.getElementById('app');
+const chat = document.getElementById('chat');
+const preview = document.getElementById('preview');
+let hoverEnabled = true;
+
+const FILE_ICON = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>';
+const EXT_ICON = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>';
+
+function shortName(t){ return t.replace(/\.pdf$/i,''); }
+function cleanTitle(t){
+  return t.replace(/\.pdf$/i,'').replace(/\s*\(\d+\)$/,'').replace(/-/g,' ').replace(/\s+/g,' ').trim();
+}
+
+/* Assign numbers: first-use (reading order of cited docs) or retrieval rank. */
+function computeNumbers(){
+  const markers = [...document.querySelectorAll('.cite')];
+  const mode = app.dataset.num;
+  const order = [];
+  markers.forEach(m => { if(!order.includes(m.dataset.doc)) order.push(m.dataset.doc); });
+  const nums = {};
+  if (mode === 'retrieval') {
+    DOCS.forEach(d => { nums[d.id] = d.rank; });
+  } else {
+    order.forEach((id, i) => { nums[id] = i + 1; });
+  }
+  return { nums, order, mode };
+}
+
+function render(){
+  const { nums, order, mode } = computeNumbers();
+  const counts = {};
+  document.querySelectorAll('.cite').forEach(el => {
+    const id = el.dataset.doc;
+    counts[id] = (counts[id] || 0) + 1;
+  });
+
+  // inline markers
+  document.querySelectorAll('.cite').forEach(el => {
+    const doc = byId[el.dataset.doc];
+    el.textContent = '';
+    if (app.dataset.view === 'chips') {
+      el.innerHTML = FILE_ICON + '<span class="fname">' + cleanTitle(doc.title) + '</span>';
+      el.setAttribute('href', doc.url);
+      el.setAttribute('target','_blank');
+      el.className = 'cite';
+      el.title = 'Open ' + doc.title;
+      el.onclick = null;
+    } else {
+      el.className = 'cite marker';
+      el.setAttribute('href', '#row-' + doc.id);
+      el.removeAttribute('target');
+      el.textContent = String(nums[doc.id]);
+      el.title = cleanTitle(doc.title) + ' — click to jump to the source';
+    }
+  });
+
+  // group adjacent numbers: "1,2" instead of "12"
+  joinAdjacent();
+
+  // numbered list
+  const cited = order.map(id => byId[id]);
+  const uncited = DOCS.filter(d => !order.includes(d.id) && d.rank <= 4);
+  const listNums = mode === 'retrieval' ? nums : Object.fromEntries(order.map((id,i) => [id, i+1]));
+
+  const row = (doc, showNum) => `
+    <div class="src-row${showNum ? '' : ' src-uncited'}" id="row-${doc.id}" data-doc="${doc.id}">
+      <div class="src-num" ${showNum ? 'data-jump="'+doc.id+'"' : ''}>${showNum ? listNums[doc.id] : '–'}</div>
+      <div class="src-main">
+        <div class="src-title" title="${doc.title}">${showNum ? cleanTitle(doc.title) : cleanTitle(doc.title)}</div>
+        <div class="src-meta">
+          <span>${doc.scheme} › ${doc.plan}</span><span class="dot"></span><span>${doc.kind}</span>
+          ${showNum ? '<span class="dot"></span><span>cited ' + (counts[doc.id] || 0) + '×</span>' : '<span class="dot"></span><span>not cited inline</span>'}
+        </div>
+      </div>
+      <a class="src-open" href="${doc.url}" target="_blank" rel="noopener">${EXT_ICON}Open PDF</a>
+    </div>`;
+
+  document.getElementById('srcList').innerHTML = cited.map(d => row(d, true)).join('');
+  const unc = document.getElementById('srcUncited');
+  const uncHead = document.getElementById('uncitedHead');
+  const hideUncited = (mode === 'first-use' && app.dataset.settled === '1');
+  unc.innerHTML = hideUncited ? '' : uncited.map(d => row(d, false)).join('');
+  uncHead.hidden = hideUncited || uncited.length === 0;
+  document.getElementById('srcCount').textContent = String(cited.length);
+
+  // side panel
+  document.getElementById('panelList').innerHTML = cited.map(d => `
+    <div class="p-item">
+      <div class="p-top">
+        <div class="src-num" data-jump="${d.id}">${listNums[d.id]}</div>
+        <div><div class="p-title">${cleanTitle(d.title)}</div>
+          <div class="p-meta">${d.scheme} › ${d.plan} · cited ${counts[d.id] || 0}×</div></div>
+      </div>
+      <div class="p-meta" style="margin-top:6px"><a class="src-open" href="${d.url}" target="_blank" rel="noopener">${EXT_ICON}Open PDF</a></div>
+    </div>`).join('');
+  document.getElementById('panelCount').textContent = cited.length + ' documents';
+
+  wireJumps();
+  // Keep the foot of the answer (the sources list) in view for review.
+  const pinned = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 120;
+  if (pinned || !render.done) { chat.scrollTop = chat.scrollHeight; render.done = true; }
+}
+
+/* Insert a comma between two *directly* adjacent markers so "12" reads as "1,2".
+   Note: `.cite + .cite` is wrong here — the `+` combinator ignores text nodes, so it
+   also matches markers separated by a whole sentence. */
+function joinAdjacent(){
+  document.querySelectorAll('.sep-added').forEach(s => s.remove());
+  if (app.dataset.view === 'chips' || app.dataset.view === 'legacy') return;
+  document.querySelectorAll('.cite').forEach(el => {
+    const prev = el.previousSibling;
+    if (prev && prev.nodeType === 1 && prev.classList.contains('cite')) {
+      el.insertAdjacentHTML('beforebegin', '<span class="sep-added" style="font-size:9.5px;vertical-align:super;color:#6b7280">,</span>');
+    }
+  });
+}
+
+function wireJumps(){
+  document.querySelectorAll('[data-jump]').forEach(el => {
+    el.onclick = (e) => {
+      e.preventDefault();
+      const id = el.dataset.jump;
+      const rows = document.querySelectorAll('#row-' + id + ', [data-doc="' + id + '"]');
+      let target = document.getElementById('row-' + id);
+      if (el.classList.contains('src-num') && el.closest('#srcList, #srcUncited')) {
+        // from list → jump to first inline use
+        target = document.querySelector('.cite[data-doc="' + id + '"]');
+        flash(target);
+      } else {
+        flash(target);
+        target && target.scrollIntoView({ block:'nearest', behavior:'smooth' });
+      }
+    };
+  });
+}
+
+function flash(el){
+  if (!el) return;
+  el.classList.add('flash');
+  setTimeout(() => el.classList.remove('flash'), 1200);
+}
+
+/* ---------- hover preview ---------- */
+function showPreview(marker){
+  const doc = byId[marker.dataset.doc];
+  if (!doc) return;
+  const uses = document.querySelectorAll('.cite[data-doc="' + doc.id + '"]').length;
+  document.getElementById('pvTitle').textContent = cleanTitle(doc.title);
+  document.getElementById('pvMeta').innerHTML = doc.scheme + ' › ' + doc.plan + ' · ' + doc.kind + ' · PDF';
+  document.getElementById('pvSnip').textContent = '“' + doc.snippet + '”';
+  document.getElementById('pvUses').textContent = 'Cited ' + uses + '× in this answer';
+  document.getElementById('pvOpen').href = doc.url;
+  const r = marker.getBoundingClientRect();
+  preview.classList.add('on');
+  const w = 300, h = preview.offsetHeight;
+  let left = Math.min(r.left + r.width/2 - w/2, window.innerWidth - w - 12);
+  left = Math.max(12, left);
+  let top = r.top - h - 10;
+  if (top < 8) top = r.bottom + 10;
+  preview.style.left = left + 'px';
+  preview.style.top = top + 'px';
+}
+function hidePreview(){ preview.classList.remove('on'); }
+
+chat.addEventListener('mouseover', (e) => {
+  const m = e.target.closest('.cite');
+  if (!m || !hoverEnabled || app.dataset.view === 'chips' || app.dataset.view === 'legacy' || app.dataset.view === 'panel') return;
+  showPreview(m);
+});
+chat.addEventListener('mouseout', (e) => { if (e.target.closest('.cite')) hidePreview(); });
+document.addEventListener('scroll', hidePreview, true);
+
+/* ---------- toolbar ---------- */
+function group(attr, btn){
+  document.querySelectorAll('[data-' + attr + ']').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+}
+
+document.querySelectorAll('[data-view]').forEach(btn => {
+  btn.onclick = () => {
+    group('view', btn);
+    app.dataset.view = btn.dataset.view;
+    // Retrieval-rank numbering keeps uncited docs in the list; first-use drops them after settle.
+    app.dataset.settled = app.dataset.num === 'first-use' ? '1' : '0';
+    render();
+  };
+});
+document.querySelectorAll('[data-marker]').forEach(btn => {
+  btn.onclick = () => { group('marker', btn); app.dataset.marker = btn.dataset.marker; render(); };
+});
+document.querySelectorAll('[data-num]').forEach(btn => {
+  btn.onclick = () => {
+    group('num', btn); app.dataset.num = btn.dataset.num;
+    app.dataset.settled = btn.dataset.num === 'first-use' ? '1' : '0';
+    render();
+  };
+});
+document.getElementById('narrowBtn').onclick = (e) => {
+  app.classList.toggle('narrow');
+  e.currentTarget.classList.toggle('on');
+};
+document.getElementById('hoverBtn').onclick = (e) => {
+  hoverEnabled = !hoverEnabled;
+  e.currentTarget.classList.toggle('on');
+  if (!hoverEnabled) hidePreview();
+};
+
+app.dataset.settled = '1';
+render();
+</script>
+</body>
+</html>

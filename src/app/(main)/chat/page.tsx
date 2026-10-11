@@ -9,6 +9,8 @@ import type { Citation, ContextOptions, ContextState, PlanOption, SchemeOption }
 import { setChatContext, streamMessage } from '@/lib/api';
 import { randomUUID, nowMs } from '@/lib/utils';
 import { SCHEME_CATALOG } from '@/lib/chat/scheme-catalog';
+import { mergeCitations } from '@/lib/chat/citations';
+import { goToCitationRow } from '@/lib/chat/citation-dom';
 import { MarkdownMessage } from '@/components/chat/MarkdownMessage';
 import { Citations } from '@/components/chat/Citations';
 import { ContextSelector } from '@/components/chat/ContextSelector';
@@ -313,10 +315,12 @@ export default function ChatPage() {
             ),
           );
         } else if (event.type === 'citations') {
-          finalCitations = event.citations;
+          // A turn can run several knowledge-base searches; every search's
+          // sources belong to the answer, not just the most recent one's.
+          finalCitations = mergeCitations(finalCitations, event.citations);
           setMessages((prev) =>
             prev.map((m) =>
-              m.id === assistantId ? { ...m, citations: event.citations } : m,
+              m.id === assistantId ? { ...m, citations: finalCitations } : m,
             ),
           );
         } else if (event.type === 'session') {
@@ -418,6 +422,7 @@ export default function ChatPage() {
                 </div>
               )}
               <div
+                data-message-id={message.id}
                 className={`max-w-[80%] rounded-2xl px-4 py-3 ${
                   message.role === 'user'
                     ? 'bg-primary text-primary-foreground'
@@ -445,12 +450,20 @@ export default function ChatPage() {
                   <MarkdownMessage
                     content={message.content}
                     className={message.role === 'user' ? 'text-primary-foreground' : ''}
+                    citations={message.citations}
+                    catalog={schemeCatalog}
+                    onCitationSelect={(number) => goToCitationRow(message.id, number)}
                   />
                 ) : message.id === pendingId ? (
                   <ThinkingIndicator />
                 ) : null}
                 {message.citations && message.citations.length > 0 && (
-                  <Citations citations={message.citations} />
+                  <Citations
+                    citations={message.citations}
+                    content={message.content}
+                    messageId={message.id}
+                    catalog={schemeCatalog}
+                  />
                 )}
               </div>
             </div>
