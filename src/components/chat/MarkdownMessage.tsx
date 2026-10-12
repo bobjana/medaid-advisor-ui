@@ -11,6 +11,7 @@ import {
 } from 'react';
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { FileText } from 'lucide-react';
 import type { Citation, SchemeOption } from '@/types';
 import { citationResolver, type CitationResolver } from '@/lib/chat/citations';
 import { CitationPreview } from './CitationPreview';
@@ -307,6 +308,10 @@ interface CitationMarkerProps {
  * A numbered footnote marker in the answer text. It is a button, not a link: it
  * moves the reader within the transcript to the source's row, rather than
  * leaving the page.
+ *
+ * The marker carries the same document icon as the Sources list at the foot of
+ * the answer, so it reads as a pointer to that list rather than as a stray
+ * number, and its tinted chip keeps it from blending into the prose.
  */
 export function CitationMarker({
   citation,
@@ -328,7 +333,8 @@ export function CitationMarker({
       onFocus={(event) => onInspect(event.currentTarget)}
       onBlur={onDismiss}
     >
-      <sup>{number}</sup>
+      <FileText className="h-2.5 w-2.5 shrink-0" aria-hidden="true" />
+      <span>{number}</span>
     </button>
   );
 }

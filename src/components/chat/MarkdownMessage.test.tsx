@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import type { Citation } from '@/types';
 import { MarkdownMessage } from './MarkdownMessage';
+import { Citations } from './Citations';
 
 const KEYCARE: Citation = {
   title: 'discovery-health-medical-scheme-keycare-plan-guide.pdf',
@@ -27,6 +28,35 @@ describe('MarkdownMessage citation markers', () => {
     const marker = screen.getByRole('button', { name: `Source 1: ${KEYCARE.title}` });
     expect(marker).toHaveTextContent('1');
     expect(screen.queryByRole('link', { name: 'keycare' })).not.toBeInTheDocument();
+  });
+
+  it('gives a marker the same document icon as the sources list', () => {
+    // The marker and the row it points at have to read as the same thing, so a
+    // reader can connect the number in the prose with the row below it.
+    const content = `Cover [a](${KEYCARE.url}).`;
+    render(
+      <>
+        <MarkdownMessage content={content} citations={[KEYCARE]} />
+        <Citations citations={[KEYCARE]} content={content} messageId="m1" />
+      </>,
+    );
+
+    const marker = screen.getByRole('button', { name: `Source 1: ${KEYCARE.title}` });
+    const markerIcon = marker.querySelector('svg');
+    const rowIcon = document.querySelector('#source-m1-1 svg');
+    expect(markerIcon).not.toBeNull();
+    // Both draw the same lucide icon; lucide stamps its name into the class.
+    expect(markerIcon?.getAttribute('class')).toContain('lucide-file-text');
+    expect(rowIcon?.getAttribute('class')).toContain('lucide-file-text');
+  });
+
+  it('renders the marker as a chip with its number in a span', () => {
+    render(answer(`Cover is unlimited [keycare](${KEYCARE.url}).`));
+
+    const marker = screen.getByRole('button', { name: `Source 1: ${KEYCARE.title}` });
+    expect(marker).toHaveClass('citation-marker');
+    expect(marker.querySelector('span')).toHaveTextContent('1');
+    // The tinted pill itself is .citation-marker in globals.css.
   });
 
   it('numbers sources in the order the answer cites them', () => {
