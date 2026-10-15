@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import type { Citation } from '@/types';
 import { MarkdownMessage } from './MarkdownMessage';
@@ -25,7 +25,7 @@ describe('MarkdownMessage citation markers', () => {
   it('renders a source link as a numbered marker instead of a link', () => {
     render(answer(`Cover is unlimited [keycare](${KEYCARE.url}) for network hospitals.`));
 
-    const marker = screen.getByRole('button', { name: `Source 1: ${KEYCARE.title}` });
+    const marker = screen.getByRole('link', { name: `Source 1: ${KEYCARE.title}` });
     expect(marker).toHaveTextContent('1');
     expect(screen.queryByRole('link', { name: 'keycare' })).not.toBeInTheDocument();
   });
@@ -41,7 +41,7 @@ describe('MarkdownMessage citation markers', () => {
       </>,
     );
 
-    const marker = screen.getByRole('button', { name: `Source 1: ${KEYCARE.title}` });
+    const marker = screen.getByRole('link', { name: `Source 1: ${KEYCARE.title}` });
     const markerIcon = marker.querySelector('svg');
     const rowIcon = document.querySelector('#source-m1-1 svg');
     expect(markerIcon).not.toBeNull();
@@ -53,7 +53,7 @@ describe('MarkdownMessage citation markers', () => {
   it('renders the marker as a chip with its number in a span', () => {
     render(answer(`Cover is unlimited [keycare](${KEYCARE.url}).`));
 
-    const marker = screen.getByRole('button', { name: `Source 1: ${KEYCARE.title}` });
+    const marker = screen.getByRole('link', { name: `Source 1: ${KEYCARE.title}` });
     expect(marker).toHaveClass('citation-marker');
     expect(marker.querySelector('span')).toHaveTextContent('1');
     // The tinted pill itself is .citation-marker in globals.css.
@@ -64,10 +64,10 @@ describe('MarkdownMessage citation markers', () => {
       answer(`First [priority](${PRIORITY.url}) then [keycare](${KEYCARE.url}).`),
     );
 
-    expect(screen.getByRole('button', { name: `Source 1: ${PRIORITY.title}` })).toHaveTextContent(
+    expect(screen.getByRole('link', { name: `Source 1: ${PRIORITY.title}` })).toHaveTextContent(
       '1',
     );
-    expect(screen.getByRole('button', { name: `Source 2: ${KEYCARE.title}` })).toHaveTextContent(
+    expect(screen.getByRole('link', { name: `Source 2: ${KEYCARE.title}` })).toHaveTextContent(
       '2',
     );
   });
@@ -75,21 +75,21 @@ describe('MarkdownMessage citation markers', () => {
   it('reuses the same number for a source cited more than once', () => {
     render(answer(`A [1](${KEYCARE.url}) B [2](${KEYCARE.url})`));
 
-    const markers = screen.getAllByRole('button', { name: `Source 1: ${KEYCARE.title}` });
+    const markers = screen.getAllByRole('link', { name: `Source 1: ${KEYCARE.title}` });
     expect(markers).toHaveLength(2);
     expect(markers[0]).toHaveTextContent('1');
   });
 
   it('matches the citation when the model trimmed the download URL', () => {
     render(answer(`Cover is unlimited [keycare](${KEYCARE.uri}).`));
-    expect(screen.getByRole('button', { name: `Source 1: ${KEYCARE.title}` })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: `Source 1: ${KEYCARE.title}` })).toBeInTheDocument();
   });
 
   it('points a storage-URI citation at the PDF the reader can open', () => {
     // The agent is told to cite the download URL but sometimes echoes the
     // gs:// URI; the link still has to reach the PDF.
     render(answer(`Cover is unlimited [keycare](${KEYCARE.uri}).`));
-    fireEvent.mouseEnter(screen.getByRole('button', { name: `Source 1: ${KEYCARE.title}` }));
+    fireEvent.mouseEnter(screen.getByRole('link', { name: `Source 1: ${KEYCARE.title}` }));
     expect(screen.getByRole('link', { name: /Open PDF/ })).toHaveAttribute('href', KEYCARE.url);
   });
 
@@ -130,19 +130,27 @@ describe('MarkdownMessage citation markers', () => {
     expect(screen.getByRole('link')).toBeInTheDocument();
   });
 
-  it('reports the footnote number when a marker is clicked', () => {
-    const onCitationSelect = vi.fn();
+  it('links the marker to the source PDF, so it can be opened or saved', () => {
+    render(answer(`Cover is unlimited [keycare](${KEYCARE.url}).`));
+
+    const marker = screen.getByRole('link', { name: `Source 1: ${KEYCARE.title}` });
+    expect(marker).toHaveAttribute('href', KEYCARE.url);
+    expect(marker).toHaveAttribute('target', '_blank');
+    expect(marker).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
+  it('renders a source with no download link as text, not a dead link', () => {
     render(
       <MarkdownMessage
-        content={`Cover is unlimited [keycare](${KEYCARE.url}).`}
-        citations={[KEYCARE]}
-        onCitationSelect={onCitationSelect}
+        content="Cover [x](gs://bucket/plans/local-only.pdf)."
+        citations={[{ title: 'local-only.pdf', uri: 'gs://bucket/plans/local-only.pdf' }]}
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: `Source 1: ${KEYCARE.title}` }));
-    expect(onCitationSelect).toHaveBeenCalledWith(1);
+    expect(document.querySelector('.citation-marker-static')).toHaveTextContent('1');
+    expect(screen.queryByRole('link', { name: /Source 1/ })).not.toBeInTheDocument();
   });
+
 });
 
 describe('MarkdownMessage citation preview', () => {
@@ -150,7 +158,7 @@ describe('MarkdownMessage citation preview', () => {
     render(answer(`Cover is unlimited [keycare](${KEYCARE.url}).`));
 
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
-    fireEvent.mouseEnter(screen.getByRole('button', { name: `Source 1: ${KEYCARE.title}` }));
+    fireEvent.mouseEnter(screen.getByRole('link', { name: `Source 1: ${KEYCARE.title}` }));
 
     const preview = screen.getByRole('tooltip');
     expect(preview).toHaveTextContent('Unlimited hospital cover in the KeyCare network.');
@@ -163,16 +171,16 @@ describe('MarkdownMessage citation preview', () => {
     // were remounted by it, the pointer would leave the button under the cursor
     // and the preview would close again immediately.
     render(answer(`Cover is unlimited [keycare](${KEYCARE.url}).`));
-    const marker = screen.getByRole('button', { name: `Source 1: ${KEYCARE.title}` });
+    const marker = screen.getByRole('link', { name: `Source 1: ${KEYCARE.title}` });
 
     fireEvent.mouseEnter(marker);
     expect(screen.getByRole('tooltip')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: `Source 1: ${KEYCARE.title}` })).toBe(marker);
+    expect(screen.getByRole('link', { name: `Source 1: ${KEYCARE.title}` })).toBe(marker);
   });
 
   it('hides the preview when the pointer leaves the marker', () => {
     render(answer(`Cover is unlimited [keycare](${KEYCARE.url}).`));
-    const marker = screen.getByRole('button', { name: `Source 1: ${KEYCARE.title}` });
+    const marker = screen.getByRole('link', { name: `Source 1: ${KEYCARE.title}` });
 
     fireEvent.mouseEnter(marker);
     expect(screen.getByRole('tooltip')).toBeInTheDocument();
@@ -187,7 +195,7 @@ describe('MarkdownMessage citation preview', () => {
         citations={[{ title: 'local-only.pdf', uri: 'gs://bucket/plans/local-only.pdf' }]}
       />,
     );
-    fireEvent.mouseEnter(screen.getByRole('button', { name: 'Source 1: local-only.pdf' }));
+    fireEvent.mouseEnter(document.querySelector('.citation-marker-static') as HTMLElement);
 
     expect(screen.getByRole('tooltip')).toHaveTextContent('local only');
     expect(screen.queryByRole('link', { name: /Open PDF/ })).not.toBeInTheDocument();

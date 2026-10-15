@@ -1,10 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import {
-  CITATION_FLASH_CLASS,
-  citationRowId,
-  goToCitationMarker,
-  goToCitationRow,
-} from './citation-dom';
+import { CITATION_FLASH_CLASS, citationRowId, goToCitationMarker } from './citation-dom';
 
 function renderDom(html: string) {
   document.body.innerHTML = html;
@@ -24,25 +19,6 @@ describe('citationRowId', () => {
   it('namespaces the row by message, so two answers can both cite source 1', () => {
     expect(citationRowId('m1', 1)).toBe('source-m1-1');
     expect(citationRowId('m2', 1)).toBe('source-m2-1');
-  });
-});
-
-describe('goToCitationRow', () => {
-  it('scrolls to the row and flashes it briefly', () => {
-    vi.useFakeTimers();
-    renderDom('<div id="source-m1-2">priority</div>');
-
-    goToCitationRow('m1', 2);
-    const row = document.getElementById('source-m1-2')!;
-    expect(row).toHaveClass(CITATION_FLASH_CLASS);
-    expect(row.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'nearest' });
-
-    vi.advanceTimersByTime(1200);
-    expect(row).not.toHaveClass(CITATION_FLASH_CLASS);
-  });
-
-  it('does nothing when the row is not on the page', () => {
-    expect(() => goToCitationRow('m1', 9)).not.toThrow();
   });
 });
 

@@ -208,10 +208,11 @@ a {
  */
 .citation-marker {
     /*
-     * An inline footnote marker. It deliberately repeats the document icon and
-     * the primary tints of the rows in the Sources list, so a marker in the
-     * prose and the row it points at read as the same thing. A tinted background
-     * keeps it legible against the answer text instead of blending into it.
+     * An inline footnote marker that links to the source PDF. It deliberately
+     * repeats the document icon and the primary tints of the rows in the
+     * Sources list, so a marker in the prose and the row it points at read as
+     * the same thing. A tinted background keeps it legible against the answer
+     * text instead of blending into it.
      */
     vertical-align: super;
     display: inline-flex;
@@ -226,11 +227,34 @@ a {
     font-weight: 700;
     line-height: 1.6;
     color: var(--color-primary);
+    /* An <a>: drop the underline and the visited-colour shift (analytics and
+       browser history must not change how a source looks). */
+    text-decoration: none;
     cursor: pointer;
+}
+
+.citation-marker:visited {
+    color: var(--color-primary);
 }
 
 .citation-marker:hover {
     background-color: color-mix(in oklab, var(--color-primary) 22%, transparent);
+    text-decoration: none;
+}
+
+/*
+ * A source the agent could not turn into a download link: nothing to open, so it
+ * is plain text that still supports the preview on hover.
+ */
+.citation-marker-static {
+    cursor: default;
+    border-color: color-mix(in oklab, var(--color-muted-foreground) 30%, transparent);
+    background-color: color-mix(in oklab, var(--color-muted-foreground) 10%, transparent);
+    color: var(--color-muted-foreground);
+}
+
+.citation-marker-static:hover {
+    background-color: color-mix(in oklab, var(--color-muted-foreground) 10%, transparent);
 }
 
 .citation-marker:focus-visible {

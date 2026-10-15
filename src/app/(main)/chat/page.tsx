@@ -10,7 +10,6 @@ import { setChatContext, streamMessage } from '@/lib/api';
 import { randomUUID, nowMs } from '@/lib/utils';
 import { SCHEME_CATALOG } from '@/lib/chat/scheme-catalog';
 import { mergeCitations } from '@/lib/chat/citations';
-import { goToCitationRow } from '@/lib/chat/citation-dom';
 import { MarkdownMessage } from '@/components/chat/MarkdownMessage';
 import { Citations } from '@/components/chat/Citations';
 import { ContextSelector } from '@/components/chat/ContextSelector';
@@ -452,7 +451,6 @@ export default function ChatPage() {
                     className={message.role === 'user' ? 'text-primary-foreground' : ''}
                     citations={message.citations}
                     catalog={schemeCatalog}
-                    onCitationSelect={(number) => goToCitationRow(message.id, number)}
                   />
                 ) : message.id === pendingId ? (
                   <ThinkingIndicator />

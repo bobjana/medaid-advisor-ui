@@ -10,7 +10,11 @@
 import { createServer } from 'node:http';
 
 const PORT = Number(process.argv[2] ?? 8123);
-const DOWNLOAD_BASE = 'http://localhost:8080';
+// Point at the deployed download service by default, so citation links in a mock
+// run actually resolve to a PDF instead of a dead localhost URL.
+const DOWNLOAD_BASE =
+  process.env.DOWNLOAD_BASE_URL ??
+  'https://medaid-advisor-download-84640843558.africa-south1.run.app';
 
 const SOURCES = [
   {

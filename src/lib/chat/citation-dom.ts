@@ -27,17 +27,13 @@ function scrollIntoView(element: Element | null): void {
   element?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-/** Follow a citation marker down to its row in the sources list. */
-export function goToCitationRow(messageId: string, number: number): void {
-  const row = document.getElementById(citationRowId(messageId, number));
-  scrollIntoView(row);
-  flash(row);
-}
-
 /**
  * Follow a row in the sources list back up to the first place the answer cites
  * it. Markers carry a `data-citation-marker` attribute rather than an id, since
  * one source is usually cited more than once.
+ *
+ * Only the row-to-marker direction exists: a marker is itself a link to the PDF,
+ * so clicking one opens the source instead of jumping down to its row.
  */
 export function goToCitationMarker(messageId: string, number: number): void {
   // Compare the dataset rather than interpolating into a selector: message ids

@@ -7,6 +7,8 @@ import {
   useMemo,
   useState,
   type ComponentProps,
+  type FocusEvent as ReactFocusEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from 'react';
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
@@ -27,8 +29,6 @@ interface MarkdownMessageProps {
   citations?: Citation[];
   /** Scheme catalogue used to describe a source (`Discovery Health › KeyCare`). */
   catalog?: SchemeOption[];
-  /** Called with the footnote number when a citation marker is activated. */
-  onCitationSelect?: (number: number) => void;
 }
 
 /** The citation marker being inspected, and where to anchor its preview card. */
@@ -122,7 +122,6 @@ export function MarkdownMessage({
   className = '',
   citations,
   catalog,
-  onCitationSelect,
 }: MarkdownMessageProps) {
   const [inspected, setInspected] = useState<Inspected | null>(null);
   const dismiss = useCallback(() => setInspected(null), []);
@@ -172,7 +171,6 @@ export function MarkdownMessage({
           <CitationMarker
             citation={citation}
             number={number}
-            onSelect={onCitationSelect}
             onInspect={(element) => inspect(citation, number, element)}
             onDismiss={dismiss}
           />
@@ -203,7 +201,7 @@ export function MarkdownMessage({
         <td className="border border-border px-2 py-1">{inline(children)}</td>
       ),
     };
-  }, [resolver, inspect, dismiss, inline, onCitationSelect]);
+  }, [resolver, inspect, dismiss, inline]);
 
   /**
    * Keep the answer's own safety filtering, but let a link that points at a
@@ -299,43 +297,64 @@ function isCitationMarkerChild(child: ReactNode, resolver: CitationResolver | nu
 interface CitationMarkerProps {
   citation: Citation;
   number: number;
-  onSelect?: (number: number) => void;
   onInspect: (element: HTMLElement) => void;
   onDismiss: () => void;
 }
 
 /**
- * A numbered footnote marker in the answer text. It is a button, not a link: it
- * moves the reader within the transcript to the source's row, rather than
- * leaving the page.
+ * A numbered footnote marker in the answer text.
  *
- * The marker carries the same document icon as the Sources list at the foot of
- * the answer, so it reads as a pointer to that list rather than as a stray
- * number, and its tinted chip keeps it from blending into the prose.
+ * It is a real link to the source PDF, so the usual link affordances work —
+ * open in a new tab, right-click "Save link as…", middle-click, and the target
+ * URL on hover — just like the row it points at in the Sources list. A source
+ * with no download URL has nothing to open, so it renders as plain (still
+ * inspectable) text rather than a dead link.
+ *
+ * The marker carries the same document icon as the Sources list, so the two
+ * read as the same thing rather than as a stray number.
  */
-export function CitationMarker({
-  citation,
-  number,
-  onSelect,
-  onInspect,
-  onDismiss,
-}: CitationMarkerProps) {
-  return (
-    <button
-      type="button"
-      data-citation-marker={number}
-      aria-label={`Source ${number}: ${citation.title}`}
-      title={`${citation.title} — click to jump to the source`}
-      className="citation-marker"
-      onClick={() => onSelect?.(number)}
-      onMouseEnter={(event) => onInspect(event.currentTarget)}
-      onMouseLeave={onDismiss}
-      onFocus={(event) => onInspect(event.currentTarget)}
-      onBlur={onDismiss}
-    >
+export function CitationMarker({ citation, number, onInspect, onDismiss }: CitationMarkerProps) {
+  const inspectProps = {
+    onMouseEnter: (event: ReactMouseEvent<HTMLElement>) => onInspect(event.currentTarget),
+    onMouseLeave: onDismiss,
+    onFocus: (event: ReactFocusEvent<HTMLElement>) => onInspect(event.currentTarget),
+    onBlur: onDismiss,
+  };
+
+  const content = (
+    <>
       <FileText className="h-2.5 w-2.5 shrink-0" aria-hidden="true" />
       <span>{number}</span>
-    </button>
+    </>
+  );
+
+  if (!citation.url) {
+    return (
+      <span
+        data-citation-marker={number}
+        aria-label={`Source ${number}: ${citation.title} (no download available)`}
+        title={citation.title}
+        className="citation-marker citation-marker-static"
+        {...inspectProps}
+      >
+        {content}
+      </span>
+    );
+  }
+
+  return (
+    <a
+      data-citation-marker={number}
+      href={citation.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`Source ${number}: ${citation.title}`}
+      title={`Open ${citation.title} (PDF)`}
+      className="citation-marker"
+      {...inspectProps}
+    >
+      {content}
+    </a>
   );
 }
 
