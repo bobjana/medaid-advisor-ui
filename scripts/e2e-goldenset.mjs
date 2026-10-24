@@ -2,14 +2,18 @@
  * E2E goldenset evaluation against the deployed GCP UI.
  *
  * Loads the curated golden_set.json from the ADK repo, drives the deployed UI
- * with Playwright (login → chat → scheme/plan context flow), captures the
- * NDJSON chat stream (answer text + citations), and scores each case:
+ * with Playwright (login → chat → scheme/plan context flow), and scores each
+ * case against what the UI actually rendered:
  *
- *   retrieval       — expected source PDFs appear in the turn's citations
+ *   retrieval       — expected source PDFs appear in the answer's Sources list
  *   recommendation  — expected top plan appears in the answer text
  *   faithfulness    — expected facts present / forbidden facts absent
  *   disambiguation  — ambiguous query prompts for a scheme; the selected
  *                     scheme is chosen and the follow-up scored
+ *
+ * Capture is DOM-based on purpose: intercepting the streaming /api/chat
+ * response body (response.text()) buffers the stream in Chromium's network
+ * layer and starves the page's own reader, breaking the app under test.
  *
  * Stops after MAX_ITERATIONS cases (default 10) and sleeps CASE_DELAY_MS
  * (default 30s) between cases to stay under the model's per-minute quota.
@@ -156,55 +160,39 @@ async function send(page, text) {
   await submit.click();
 }
 
-const inflight = new Set();
-
-/** Wait until the in-flight chat turn has finished. */
-async function waitForIdle(page, capture, timeout = 180_000) {
-  const startDeadline = Date.now() + 8_000;
+/**
+ * Wait until the chat turn has finished. The submit button's spinner is the
+ * single source of truth: it renders while the page is loading and clears
+ * when the turn's terminal event has been processed.
+ */
+async function waitForIdle(page, timeout = 180_000) {
+  const startedAt = Date.now();
+  const startDeadline = startedAt + 10_000;
   while (Date.now() < startDeadline) {
     const spinner = await page.locator(`${SUBMIT} svg.animate-spin`).count();
-    if (inflight.size > 0 || spinner > 0) break;
+    if (spinner > 0) break;
     await page.waitForTimeout(100);
   }
-  const startedAt = Date.now();
-  let lastProgressLog = startedAt;
-  const deadline = startedAt + timeout;
+
+  let lastProgressLog = Date.now();
+  const deadline = Date.now() + timeout;
   let clearSamples = 0;
   while (Date.now() < deadline) {
     const spinner = await page.locator(`${SUBMIT} svg.animate-spin`).count();
-    if (inflight.size === 0 && spinner === 0) {
+    if (spinner === 0) {
       if (++clearSamples >= 3) return;
     } else {
       clearSamples = 0;
     }
-    if (capture && Date.now() - lastProgressLog >= 30_000) {
+    if (Date.now() - lastProgressLog >= 30_000) {
       lastProgressLog = Date.now();
-      const partial = captureText(capture.events);
-      console.log(
-        `   ⏳ still waiting (${Math.round((Date.now() - startedAt) / 1000)}s, ` +
-          `${partial.length} chars streamed)`,
-      );
+      console.log(`   ⏳ still waiting (${Math.round((Date.now() - startedAt) / 1000)}s)`);
     }
     await page.waitForTimeout(200);
   }
-
-  // The stream may have finished even if the UI busy spinner is stuck — check
-  // the captured events before declaring the turn a failure.
-  if (capture) {
-    await capture.drain(5_000);
-    if (capture.events.some((e) => e.type === 'done' || e.type === 'error')) {
-      console.log('   ⚠ turn stream finished but the UI busy spinner stayed on');
-      return;
-    }
-    const partial = captureText(capture.events);
-    throw new Error(
-      `timed out after ${Math.round(timeout / 1000)}s waiting for the chat turn; ` +
-        `last stream state: ${
-          partial ? `answer streaming (${partial.length} chars so far)` : 'no events captured'
-        }`,
-    );
-  }
-  throw new Error('timed out waiting for the chat turn to finish');
+  throw new Error(
+    `timed out after ${Math.round(timeout / 1000)}s waiting for the chat turn to finish`,
+  );
 }
 
 function schemeChip(page, name) {
@@ -253,74 +241,35 @@ async function shot(page, name) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Chat stream capture — collect text/citations/context events per turn
-// ---------------------------------------------------------------------------
+/**
+ * Read what the UI rendered for the most recent assistant turn: the answer
+ * text (Sources section stripped), the cited source filenames from the
+ * Sources list, and any visible error banner.
+ */
+async function readLastAssistant(page) {
+  return page.evaluate(() => {
+    const bubbles = [...document.querySelectorAll('div[data-message-id]')];
+    const assistants = bubbles.filter((b) => b.className.includes('bg-surface-container-high'));
+    const last = assistants[assistants.length - 1];
+    if (!last) return { answerText: '', citations: [], bannerError: null };
 
-class TurnCapture {
-  constructor(page) {
-    this.page = page;
-    this.events = [];
-    this.recording = false;
-    this._onResponse = async (res) => {
-      if (!this.recording) return;
-      if (res.request().method() !== 'POST' || !res.url().includes('/api/chat')) return;
-      if (res.url().includes('/api/chat/reset') || res.url().includes('/api/chat/context')) return;
-      let body = '';
-      try {
-        body = await res.text();
-      } catch {
-        return;
-      }
-      for (const line of body.split('\n')) {
-        if (!line.trim()) continue;
-        try {
-          this.events.push(JSON.parse(line));
-        } catch {
-          /* partial/non-JSON line */
-        }
-      }
+    let text = (last.innerText || '').trim();
+    const sourcesAt = text.toUpperCase().indexOf('SOURCES');
+    if (sourcesAt >= 0) text = text.slice(0, sourcesAt).trim();
+
+    const citations = [...new Set(
+      [...last.querySelectorAll('[title]')]
+        .map((el) => el.getAttribute('title') || '')
+        .filter((t) => /\.pdf$/i.test(t)),
+    )];
+
+    const banner = document.querySelector('div[class*="bg-destructive"]');
+    return {
+      answerText: text,
+      citations,
+      bannerError: banner ? banner.innerText.trim().slice(0, 300) : null,
     };
-    page.on('response', this._onResponse);
-  }
-
-  start() {
-    this.events = [];
-    this.recording = true;
-  }
-
-  async stop() {
-    this.recording = false;
-    return this.drain();
-  }
-
-  /** Events can land in chunks; poll briefly for the stream's final `done`. */
-  async drain(maxWait = 5_000) {
-    const deadline = Date.now() + maxWait;
-    while (Date.now() < deadline) {
-      if (this.events.some((e) => e.type === 'done' || e.type === 'error')) break;
-      await this.page.waitForTimeout(250);
-    }
-    return this.events;
-  }
-}
-
-function captureText(events) {
-  return events
-    .filter((e) => e.type === 'text')
-    .map((e) => e.delta)
-    .join('');
-}
-
-function captureCitations(events) {
-  const seen = new Map();
-  for (const e of events) {
-    if (e.type !== 'citations') continue;
-    for (const c of e.citations ?? []) {
-      if (c?.title) seen.set(c.title, c);
-    }
-  }
-  return [...seen.values()];
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -332,8 +281,7 @@ function scoreCase(caseDef, turns) {
   const add = (name, ok, detail = '') => checks.push({ name, ok, detail });
 
   const answer = norm(turns.map((t) => t.answerText).join(' '));
-  const citations = turns.flatMap((t) => t.citations);
-  const citationTitles = citations.map((c) => norm(c.title));
+  const citationTitles = turns.flatMap((t) => t.citations).map((c) => norm(c));
 
   const hasSource = (expected) => {
     const want = norm(expected).replace(/\.pdf/g, '').replace(/\s+/g, ' ').trim();
@@ -343,7 +291,6 @@ function scoreCase(caseDef, turns) {
     });
   };
 
-  const hasFact = (fact, threshold = 0.6) => factCoverage(answer, fact) >= threshold;
   const answerMentionsPlan = (slug) => {
     const variants = planSlugVariants(slug);
     return variants.some((v) => answer.includes(v));
@@ -426,6 +373,10 @@ function scoreCase(caseDef, turns) {
   return checks;
 }
 
+// ---------------------------------------------------------------------------
+// Driving one case through the UI
+// ---------------------------------------------------------------------------
+
 /** Infer the scheme a case belongs to from its expected source PDFs. */
 function inferScheme(caseDef) {
   const sources = (caseDef.expected_sources ?? []).join(' ').toLowerCase();
@@ -434,28 +385,22 @@ function inferScheme(caseDef) {
   return 'discovery'; // goldenset is discovery-heavy; safe default
 }
 
-// ---------------------------------------------------------------------------
-// Driving one case through the UI
-// ---------------------------------------------------------------------------
-
-async function runCase(page, capture, caseDef) {
+async function runCase(page, caseDef) {
   const turns = [];
 
   if (caseDef.type === 'disambiguation') {
     // Turn 1: ambiguous query — must prompt for a scheme.
     await freshChat(page);
-    capture.start();
     await send(page, caseDef.query);
     await waitForSchemeChips(page);
-    await waitForIdle(page, capture);
-    let events = await capture.stop();
-    const promptedText = norm(captureText(events));
-    const promptedOk = promptedText.includes('select a scheme') || promptedText.includes('which medical scheme');
+    await waitForIdle(page);
+    const promptedText = norm((await readLastAssistant(page)).answerText);
+    const promptedOk =
+      promptedText.includes('select a scheme') || promptedText.includes('which medical scheme');
 
     // Turn 2: select the requested scheme and settle the plan window.
     const schemeLabel = SCHEME_LABELS[caseDef.selected_scheme];
     if (!schemeLabel) throw new Error(`unknown selected_scheme: ${caseDef.selected_scheme}`);
-    capture.start();
     await schemeChip(page, schemeLabel).click();
     await waitForPlanDecision(page);
     const followupPlanName = caseDef.followup_plan
@@ -473,20 +418,18 @@ async function runCase(page, capture, caseDef) {
     } else {
       await page.getByRole('button', { name: 'Use all plans' }).click();
     }
-    await waitForIdle(page, capture);
-    events = await capture.stop();
+    await waitForIdle(page);
 
     // Turn 3: the follow-up question against the selected context.
-    capture.start();
     await send(page, caseDef.followup_query);
-    await waitForIdle(page, capture);
-    events = await capture.stop();
+    await waitForIdle(page);
+    const final = await readLastAssistant(page);
 
     turns.push({
       role: 'disambiguation-flow',
       promptedForScheme: promptedOk,
-      answerText: captureText(events),
-      citations: captureCitations(events),
+      answerText: final.answerText,
+      citations: final.citations,
       selectedScheme: caseDef.selected_scheme,
     });
     return turns;
@@ -494,14 +437,12 @@ async function runCase(page, capture, caseDef) {
 
   // Single-turn case: fresh session so prior context cannot leak in.
   await freshChat(page);
-  capture.start();
   await send(page, caseDef.query);
-  await waitForIdle(page, capture);
-  let events = await capture.stop();
+  await waitForIdle(page);
 
   // If the agent could not infer the scheme it prompts for one instead of
   // answering. Resolve it by selecting the scheme implied by the case's
-  // expected sources and continue scheme-wide, then score that answer turn.
+  // expected sources and continue scheme-wide, then read that answer turn.
   const prompted =
     (await schemeChip(page, BONITAS).isVisible().catch(() => false)) &&
     (await schemeChip(page, DISCOVERY).isVisible().catch(() => false));
@@ -510,10 +451,8 @@ async function runCase(page, capture, caseDef) {
     const scheme = inferScheme(caseDef);
     await schemeChip(page, SCHEME_LABELS[scheme]).click();
     await waitForPlanDecision(page);
-    capture.start();
     await page.getByRole('button', { name: 'Use all plans' }).click();
-    await waitForIdle(page, capture);
-    events = await capture.stop();
+    await waitForIdle(page);
     turns.push({
       role: 'scheme-prompt',
       answerText: '',
@@ -522,11 +461,13 @@ async function runCase(page, capture, caseDef) {
     });
   }
 
+  const answer = await readLastAssistant(page);
   turns.push({
     role: 'answer',
-    answerText: captureText(events),
-    citations: captureCitations(events),
+    answerText: answer.answerText,
+    citations: answer.citations,
     selectedScheme: prompted ? inferScheme(caseDef) : null,
+    bannerError: answer.bannerError ?? undefined,
   });
   return turns;
 }
@@ -555,23 +496,11 @@ page.on('console', (msg) => {
 });
 page.on('pageerror', (err) => consoleErrors.push(`pageerror: ${err.message}`));
 
-// Request-level inflight tracking makes waitForIdle robust even when the
-// busy spinner fails to render. Only *turn* requests count — context and
-// reset calls can legitimately hang and would otherwise pin idle forever.
-page.on('request', (req) => {
-  if (req.method() !== 'POST' || !req.url().includes('/api/chat')) return;
-  if (req.url().includes('/api/chat/reset') || req.url().includes('/api/chat/context')) return;
-  inflight.add(req);
-});
-page.on('requestfinished', (req) => inflight.delete(req));
-page.on('requestfailed', (req) => inflight.delete(req));
-
 let browserDead = false;
 browser.on('disconnected', () => {
   browserDead = true;
 });
 
-const capture = new TurnCapture(page);
 const results = [];
 let ran = 0;
 
@@ -594,7 +523,7 @@ try {
     let turns = [];
     let error = null;
     try {
-      turns = await runCase(page, capture, caseDef);
+      turns = await runCase(page, caseDef);
     } catch (err) {
       error = err.message;
     }
@@ -619,8 +548,9 @@ try {
       failed,
       evidence: {
         answerPreview: norm(turns.map((t) => t.answerText).join(' ')).slice(0, 600),
-        citations: turns.flatMap((t) => t.citations).map((c) => c.title),
+        citations: turns.flatMap((t) => t.citations),
         promptedForScheme: turns.some((t) => t.promptedForScheme === true) || undefined,
+        bannerError: turns.map((t) => t.bannerError).find(Boolean) || undefined,
       },
     });
 
