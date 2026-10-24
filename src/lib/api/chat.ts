@@ -46,19 +46,68 @@ export async function setChatContext(input: ChatContextInput): Promise<ChatConte
   return (await resp.json().catch(() => ({}))) as ChatContextResult;
 }
 
-export async function* streamMessage(req: ChatRequest): AsyncGenerator<ChatEvent> {
+export interface StreamMessageOptions {
+  /**
+   * Abort the turn when no stream events arrive for this long (ms); 0
+   * disables the watchdog. Without it a backend that stalls mid-stream
+   * (e.g. upstream quota exhaustion) leaves the busy spinner on forever.
+   */
+  stallTimeoutMs?: number;
+}
+
+/** Read one chunk from the stream, failing when nothing arrives in time. */
+async function readWithStallTimeout(
+  reader: ReadableStreamDefaultReader<string>,
+  stallTimeoutMs: number,
+): Promise<ReadableStreamReadResult<string>> {
+  if (stallTimeoutMs <= 0) return reader.read();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      reader.read(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(
+                `chat stream stalled: no response from the advisor for ${Math.round(stallTimeoutMs / 1000)}s`,
+              ),
+            ),
+          stallTimeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function* streamMessage(
+  req: ChatRequest,
+  opts: StreamMessageOptions = {},
+): AsyncGenerator<ChatEvent> {
+  const stallTimeoutMs = opts.stallTimeoutMs ?? 0;
+  const controller = new AbortController();
   const resp = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-user-id': getOrCreateUserId() },
     body: JSON.stringify(req),
+    signal: controller.signal,
   });
-  if (!resp.ok || !resp.body) throw new Error(`Chat failed: ${resp.status}`);
+  if (!resp.ok || !resp.body) {
+    let detail = '';
+    if (typeof resp.text === 'function') {
+      detail = await resp.text().catch(() => '');
+    }
+    controller.abort();
+    throw new Error(`Chat failed: ${resp.status}${detail ? ` — ${detail.slice(0, 300)}` : ''}`);
+  }
 
   const reader = resp.body.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = '';
   try {
     while (true) {
-      const { value, done } = await reader.read();
+      const { value, done } = await readWithStallTimeout(reader, stallTimeoutMs);
       if (done) break;
       buffer += value;
 
@@ -76,7 +125,15 @@ export async function* streamMessage(req: ChatRequest): AsyncGenerator<ChatEvent
         yield parsed as ChatEvent;
       }
     }
+  } catch (err) {
+    // Tear the fetch down so a hung backend does not hold the connection.
+    controller.abort();
+    throw err;
   } finally {
-    reader.releaseLock();
+    try {
+      reader.releaseLock();
+    } catch {
+      /* the abort may already have released the reader */
+    }
   }
 }

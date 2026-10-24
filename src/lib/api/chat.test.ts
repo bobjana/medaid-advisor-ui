@@ -95,6 +95,38 @@ describe('streamMessage', () => {
     await expect(gen.next()).rejects.toThrow('Chat failed: 500');
   });
 
+  it('surfaces the response body detail when the chat request is rejected', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      body: null,
+      text: () => Promise.resolve('RESOURCE_EXHAUSTED: quota exceeded'),
+    });
+
+    const gen = streamMessage({ message: 'test' });
+    await expect(gen.next()).rejects.toThrow('Chat failed: 429 — RESOURCE_EXHAUSTED: quota exceeded');
+  });
+
+  it('aborts with a stall error when the stream stops sending events', async () => {
+    const stalled = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode(JSON.stringify({ type: 'text', delta: 'hi' }) + '\n'),
+        );
+        // The stream never closes — the backend hangs.
+      },
+    });
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, body: stalled });
+
+    const events: ChatEvent[] = [];
+    await expect(async () => {
+      for await (const ev of streamMessage({ message: 'test' }, { stallTimeoutMs: 25 })) {
+        events.push(ev);
+      }
+    }).rejects.toThrow(/stalled/);
+    expect(events).toEqual([{ type: 'text', delta: 'hi' }]);
+  });
+
   it('parses citation events', async () => {
     const citation = {
       title: 'plan.pdf',

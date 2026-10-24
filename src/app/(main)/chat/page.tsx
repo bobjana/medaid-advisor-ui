@@ -10,6 +10,7 @@ import { setChatContext, streamMessage } from '@/lib/api';
 import { randomUUID, nowMs } from '@/lib/utils';
 import { SCHEME_CATALOG } from '@/lib/chat/scheme-catalog';
 import { mergeCitations } from '@/lib/chat/citations';
+import { describeChatError } from '@/lib/chat/errors';
 import { MarkdownMessage } from '@/components/chat/MarkdownMessage';
 import { Citations } from '@/components/chat/Citations';
 import { ContextSelector } from '@/components/chat/ContextSelector';
@@ -23,6 +24,13 @@ const JSON_BLOCK_RE = /```(?:json)?\s*\{[\s\S]*?"(?:schemes|plans|type)"[\s\S]*?
  * before the turn continues with *all* of that scheme's plans.
  */
 const PLAN_DECISION_MS = 3000;
+
+/**
+ * Give up on a turn when the stream sends nothing for this long — a backend
+ * that stalls (e.g. upstream quota exhaustion) would otherwise leave the
+ * busy spinner running forever.
+ */
+const CHAT_STALL_TIMEOUT_MS = 150_000;
 
 function stripContextJson(text: string): string {
   return text.replace(JSON_BLOCK_RE, '').trim();
@@ -297,8 +305,12 @@ export default function ChatPage() {
       { id: assistantId, role: 'assistant', content: '' },
     ]);
 
+    let turnError: string | null = null;
     try {
-      const stream = streamMessage({ message: trimmed, sessionId: sessionIdRef.current });
+      const stream = streamMessage(
+        { message: trimmed, sessionId: sessionIdRef.current },
+        { stallTimeoutMs: CHAT_STALL_TIMEOUT_MS },
+      );
       let finalContent = '';
       let finalCitations: Citation[] | undefined;
       let finalOptions: ContextOptions | undefined;
@@ -338,7 +350,8 @@ export default function ChatPage() {
         } else if (event.type === 'context_state') {
           applyContextState(event.state);
         } else if (event.type === 'error') {
-          setError(event.message);
+          turnError = describeChatError(event.message);
+          setError(turnError);
         }
       }
 
@@ -355,8 +368,21 @@ export default function ChatPage() {
         err instanceof Error
           ? `Unable to reach chat service: ${err.message}`
           : 'An unexpected error occurred';
-      setError(message);
+      turnError = describeChatError(message);
+      setError(turnError);
     } finally {
+      // Surface the failure in the transcript itself when the turn produced
+      // no content — an empty bubble reads as if the advisor said nothing.
+      const failure = turnError;
+      if (failure) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId && !m.content.trim()
+              ? { ...m, content: `⚠️ ${failure}` }
+              : m,
+          ),
+        );
+      }
       setPendingId(null);
       setLoading(false);
     }
