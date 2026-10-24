@@ -556,9 +556,11 @@ page.on('console', (msg) => {
 page.on('pageerror', (err) => consoleErrors.push(`pageerror: ${err.message}`));
 
 // Request-level inflight tracking makes waitForIdle robust even when the
-// busy spinner fails to render.
+// busy spinner fails to render. Only *turn* requests count — context and
+// reset calls can legitimately hang and would otherwise pin idle forever.
 page.on('request', (req) => {
   if (req.method() !== 'POST' || !req.url().includes('/api/chat')) return;
+  if (req.url().includes('/api/chat/reset') || req.url().includes('/api/chat/context')) return;
   inflight.add(req);
 });
 page.on('requestfinished', (req) => inflight.delete(req));

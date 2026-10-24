@@ -122,7 +122,12 @@ export async function* streamMessage(
         } catch {
           continue;
         }
-        yield parsed as ChatEvent;
+        const event = parsed as ChatEvent;
+        yield event;
+        // done/error are terminal — don't keep waiting for the connection to
+        // close: flaky proxies can leave it open long after the last event,
+        // which used to keep the busy spinner on even though the turn ended.
+        if (event.type === 'done' || event.type === 'error') return;
       }
     }
   } catch (err) {

@@ -107,6 +107,27 @@ describe('streamMessage', () => {
     await expect(gen.next()).rejects.toThrow('Chat failed: 429 — RESOURCE_EXHAUSTED: quota exceeded');
   });
 
+  it('ends the stream on the terminal done event without waiting for the connection', async () => {
+    const unclosed = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode(
+            JSON.stringify({ type: 'text', delta: 'hi' }) + '\n' +
+            JSON.stringify({ type: 'done' }) + '\n',
+          ),
+        );
+        // The connection never closes — the backend/proxy keeps it open.
+      },
+    });
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, body: unclosed });
+
+    const events = await collectEvents({ message: 'hello' });
+    expect(events).toEqual([
+      { type: 'text', delta: 'hi' },
+      { type: 'done' },
+    ]);
+  });
+
   it('aborts with a stall error when the stream stops sending events', async () => {
     const stalled = new ReadableStream<Uint8Array>({
       start(controller) {
