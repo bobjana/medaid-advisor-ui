@@ -2,13 +2,14 @@
 
 Multi-module medical aid advisor frontend. Next.js 16 App Router with:
 - **Dashboard** (`/`) — action hub linking into the three workflows
-- **Questionnaire** (`/questionnaire`) — 7-section needs assessment with
-  React Hook Form + Zod validation, progress autosaved to `localStorage`
+- **Questionnaire** (`/questionnaire`) — 7-section needs assessment
+  (preview-mode demo; the RHF + Zod components exist but are not yet
+  mounted; progress autosave to `localStorage` planned)
 - **Chat** (`/chat`) — conversational interface for plan questions
-  (`POST /chat`)
-- **Recommend** (`/recommend`) — broker-grade plan matching that uploads
-  client data and returns scored recommendations with reasoning
-  (`POST /recommend`)
+  (streamed via the same-origin `/api/chat` NDJSON proxy)
+- **Recommend** (`/recommend`) — broker-grade plan matching
+  (preview-mode demo; UploadZone / PlanCard / ResultsPanel exist but
+  are not mounted; `POST /recommend` wiring planned)
 
 ## Stack
 
@@ -23,7 +24,7 @@ Multi-module medical aid advisor frontend. Next.js 16 App Router with:
 - **Container**: multi-stage Docker (`Dockerfile`) → non-root Node 20 alpine
   listening on `PORT=8080`
 - **CI/CD**: GitHub Actions → Artifact Registry → Cloud Run
-  (`europe-west4`)
+  (`africa-south1`)
 
 ## Project Layout
 
@@ -34,10 +35,10 @@ src/
     questionnaire/         7-section needs assessment
     chat/                  Chat interface
     recommend/             Plan recommendation flow
-    layout.tsx             Root layout (Sidebar + Header shell)
+    layout.tsx             Root layout (Sidebar-only shell via MainLayout)
     globals.css            Tailwind entry
   components/
-    layout/               App shell (Sidebar, Header)
+    layout/               App shell (Sidebar, UserMenu)
     questionnaire/        7 section components + PreferredProvidersCard
     recommend/            UploadZone, PlanCard, ResultsPanel
     location/             AddressAutocomplete (mock SA addresses),
@@ -47,7 +48,7 @@ src/
                           form, input, label, progress, radio-group,
                           select, separator, textarea, checkbox)
     LanguageSelector.tsx
-  hooks/                  useLocalStorage, useLocation
+  hooks/                  useLocalStorage (SSR-safe, cross-tab sync)
   i18n/                   i18next setup + translation resources
   lib/
     api/                  Typed API client + chat/recommend endpoints
@@ -88,17 +89,23 @@ NEXT_PUBLIC_API_BASE_URL=https://api.medaid.example.com
 ```
 
 Defaults to `http://localhost:8080` if unset (see
-`src/lib/api/client.ts`). When the backend is unreachable, the Recommend
-page falls back to a small mock dataset for local development.
+`src/lib/api/client.ts`). For GCP-free local development, `just dev-mock`
+runs a scripted mock ADK server (`scripts/mock-adk-server.mjs`, :8123) —
+there is no in-app mock fallback; mocks are separate Node servers under
+`scripts/`.
 
 ## API Contracts
 
-The frontend is a pure API consumer. Types live in `src/types/api.ts`:
+The frontend is a pure API consumer. Types live in `src/types/api.ts`.
+The live contract is the same-origin NDJSON proxy (see `src/app/api/chat/`);
+the `POST /recommend` row is the planned contract for when the recommend
+flow is wired:
 
 | Endpoint            | Request                                | Response                                          |
 | ------------------- | -------------------------------------- | ------------------------------------------------- |
-| `POST /chat`        | `ChatRequest { message, sessionId? }`  | `ChatResponse { response, sessionId? }`           |
-| `POST /recommend`   | `PlanRecommendationRequest { clientData: QuestionnaireData }` | `PlanRecommendationResponse { recommendations, reasoning, alternatives }` |
+| `POST /api/chat`    | `ChatRequest { message, sessionId? }`  | `ChatEvent` NDJSON stream (`text`/`citations`/`session`/`context_options`/`context_state`/`error`/`done`) |
+| `POST /api/chat/context` | `{ sessionId?, scheme, plan }`    | `{ ok, sessionId }` — sets/clears agent session context |
+| `POST /recommend`   | `PlanRecommendationRequest { clientData: QuestionnaireData }` | `PlanRecommendationResponse { recommendations, reasoning, alternatives }` (planned) |
 
 ## Deployment
 
@@ -116,5 +123,5 @@ just open           # open the deployed service URL
 ```
 
 Cloud Run service name: `medaid-advisor-ui` in project `med-aid-advisor`,
-region `europe-west4`. The Dockerfile uses Next.js `output: 'standalone'`
+region `africa-south1`. The Dockerfile uses Next.js `output: 'standalone'`
 to produce a minimal Node runtime image (~150 MB).
