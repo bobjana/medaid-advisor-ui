@@ -2,7 +2,7 @@ import type { ChatEvent, ChatRequest } from '@/types';
 import type { AgentEvent } from './adk/events';
 import { streamAgentQuery } from './vertex/stream';
 import { streamAdkQuery } from './adk/stream';
-import { getChatBackend } from './backend';
+import { getAgentBackendUrl, getChatBackend, isAgentBackend } from './backend';
 
 const encoder = new TextEncoder();
 
@@ -53,6 +53,16 @@ function streamEvents(source: AsyncGenerator<AgentEvent>): ReadableStream<Uint8A
 }
 
 export function streamChat(req: ChatRequest, userId: string): ReadableStream<Uint8Array> {
+  // An explicit UI backend selection wins: both 'adk' and 'python' speak the
+  // ADK wire contract, so they share the stream client at different URLs.
+  if (isAgentBackend(req.backend)) {
+    return streamEvents(
+      streamAdkQuery(
+        { userId, message: req.message, sessionId: req.sessionId },
+        { baseUrl: getAgentBackendUrl(req.backend) },
+      ),
+    );
+  }
   return streamEvents(
     getChatBackend() === 'local'
       ? streamAdkQuery({ userId, message: req.message, sessionId: req.sessionId })

@@ -1,4 +1,5 @@
 import type { ChatEvent, ChatRequest } from '@/types';
+import type { AgentBackend } from './backend';
 import { randomUUID } from '@/lib/utils';
 
 export function getOrCreateUserId(): string {
@@ -14,6 +15,8 @@ export function getOrCreateUserId(): string {
 
 export interface ChatContextInput {
   sessionId?: string;
+  /** Agent backend the session lives on (see ChatRequest.backend). */
+  backend?: AgentBackend;
   /** Scheme slug (e.g. `bonitas`), or `null` for "all schemes". */
   scheme: string | null;
   /** Plan id (e.g. `boncomplete`), or `null` for scheme-wide. */
@@ -53,6 +56,8 @@ export interface StreamMessageOptions {
    * (e.g. upstream quota exhaustion) leaves the busy spinner on forever.
    */
   stallTimeoutMs?: number;
+  /** Aborts the fetch when the caller tears the turn down (e.g. a backend switch resets the chat). */
+  signal?: AbortSignal;
 }
 
 /** Read one chunk from the stream, failing when nothing arrives in time. */
@@ -88,6 +93,12 @@ export async function* streamMessage(
 ): AsyncGenerator<ChatEvent> {
   const stallTimeoutMs = opts.stallTimeoutMs ?? 0;
   const controller = new AbortController();
+  // Forward the caller's teardown to the internal controller the stall
+  // watchdog and error paths already use.
+  if (opts.signal) {
+    if (opts.signal.aborted) controller.abort();
+    else opts.signal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
   const resp = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-user-id': getOrCreateUserId() },

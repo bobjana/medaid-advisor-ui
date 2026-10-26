@@ -1,11 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { NextRequest } from 'next/server';
 import { POST } from './route';
 import { getChatBackend } from '@/lib/api/backend';
 import { createLocalSession, setSessionContext as setLocalSessionContext } from '@/lib/api/adk/client';
 import { createSession, setSessionContext as setVertexSessionContext } from '@/lib/api/vertex/sessions';
 
-vi.mock('@/lib/api/backend', () => ({ getChatBackend: vi.fn() }));
+vi.mock('@/lib/api/backend', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/api/backend')>()),
+  getChatBackend: vi.fn(),
+}));
 vi.mock('@/lib/api/adk/client', () => ({
   createLocalSession: vi.fn(),
   setSessionContext: vi.fn(),
@@ -36,6 +39,12 @@ describe('POST /api/chat/context', () => {
     mockedSetLocalSessionContext.mockResolvedValue(undefined);
     mockedCreateSession.mockResolvedValue('s-created');
     mockedSetVertexSessionContext.mockResolvedValue(undefined);
+    delete process.env.NEXT_PUBLIC_API_BASE_URL;
+    process.env.PYTHON_BACKEND_URL = 'http://py:9000';
+  });
+
+  afterEach(() => {
+    delete process.env.PYTHON_BACKEND_URL;
   });
 
   it('sets the scheme/plan on the GCP session', async () => {
@@ -99,12 +108,57 @@ describe('POST /api/chat/context', () => {
     expect(res.status).toBe(200);
     expect(body.ok).toBe(true);
     expect(typeof body.sessionId).toBe('string');
-    expect(mockedCreateLocalSession).toHaveBeenCalledWith('user-1', body.sessionId);
+    expect(mockedCreateLocalSession).toHaveBeenCalledWith('user-1', body.sessionId, {
+      baseUrl: undefined,
+    });
     expect(mockedSetLocalSessionContext).toHaveBeenCalledWith('user-1', body.sessionId, {
       scheme: 'bonitas',
       plan: 'boncap',
-    });
+    }, { baseUrl: undefined });
     expect(mockedSetVertexSessionContext).not.toHaveBeenCalled();
+  });
+
+  it('targets the python parity server when the UI selects the python backend', async () => {
+    mockedGetChatBackend.mockReturnValue('gcp');
+
+    const res = await POST(request({ sessionId: 's-abc', scheme: 'bonitas', backend: 'python' }));
+
+    expect(res.status).toBe(200);
+    expect(mockedSetLocalSessionContext).toHaveBeenCalledWith(
+      'user-1',
+      's-abc',
+      { scheme: 'bonitas', plan: null },
+      { baseUrl: 'http://py:9000' },
+    );
+    expect(mockedSetVertexSessionContext).not.toHaveBeenCalled();
+  });
+
+  it('targets the ADK server when the UI selects the adk backend', async () => {
+    mockedGetChatBackend.mockReturnValue('gcp');
+    process.env.NEXT_PUBLIC_API_BASE_URL = 'http://adk:7001';
+
+    const res = await POST(request({ sessionId: 's-abc', scheme: 'bonitas', backend: 'adk' }));
+
+    expect(res.status).toBe(200);
+    expect(mockedSetLocalSessionContext).toHaveBeenCalledWith(
+      'user-1',
+      's-abc',
+      { scheme: 'bonitas', plan: null },
+      { baseUrl: 'http://adk:7001' },
+    );
+    expect(mockedSetVertexSessionContext).not.toHaveBeenCalled();
+  });
+
+  it('creates the session on the selected python backend when none exists yet', async () => {
+    mockedGetChatBackend.mockReturnValue('gcp');
+
+    const res = await POST(request({ scheme: 'discovery', backend: 'python' }));
+    const body = await res.json();
+
+    expect(mockedCreateLocalSession).toHaveBeenCalledWith('user-1', body.sessionId, {
+      baseUrl: 'http://py:9000',
+    });
+    expect(mockedCreateSession).not.toHaveBeenCalled();
   });
 
   it('rejects a plan without a scheme', async () => {

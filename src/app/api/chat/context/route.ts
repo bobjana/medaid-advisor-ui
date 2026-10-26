@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { getChatBackend } from '@/lib/api/backend';
+import { getAgentBackendUrl, getChatBackend, isAgentBackend } from '@/lib/api/backend';
 import {
   createLocalSession,
   setSessionContext as setLocalSessionContext,
@@ -15,6 +15,7 @@ export const dynamic = 'force-dynamic';
 
 interface ContextBody {
   sessionId?: string;
+  backend?: unknown;
   scheme?: string | null;
   plan?: string | null;
 }
@@ -70,21 +71,26 @@ export async function POST(req: NextRequest) {
     plan: scheme.value ? plan.value : null,
   };
   const userId = req.headers.get('x-user-id') ?? 'anonymous';
-  const backend = getChatBackend();
+  // An explicit UI backend selection always targets an ADK-contract server
+  // (the python parity router implements the same endpoints); without it the
+  // server-wide CHAT_BACKEND env default applies.
+  const agentBackend = isAgentBackend(body.backend) ? body.backend : undefined;
+  const baseUrl = agentBackend ? getAgentBackendUrl(agentBackend) : undefined;
+  const useLocalServer = agentBackend !== undefined || getChatBackend() === 'local';
 
   try {
     let sessionId = body.sessionId;
     if (!sessionId) {
-      if (backend === 'local') {
+      if (useLocalServer) {
         sessionId = `s-${randomUUID()}`;
-        await createLocalSession(userId, sessionId);
+        await createLocalSession(userId, sessionId, { baseUrl });
       } else {
         sessionId = await createSession(userId);
       }
     }
 
-    if (backend === 'local') {
-      await setLocalSessionContext(userId, sessionId, context);
+    if (useLocalServer) {
+      await setLocalSessionContext(userId, sessionId, context, { baseUrl });
     } else {
       await setVertexSessionContext(sessionId, context);
     }

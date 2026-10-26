@@ -1,8 +1,15 @@
 import type { QuestionnaireData } from './questionnaire';
+import type { AgentBackend } from '@/lib/api/backend';
 
 export interface ChatRequest {
   message: string;
   sessionId?: string;
+  /**
+   * Agent backend picked in the chat UI. When set, the API routes proxy the
+   * ADK wire contract to that backend's server; when omitted the server-wide
+   * CHAT_BACKEND env default applies (Vertex or the local ADK dev server).
+   */
+  backend?: AgentBackend;
 }
 
 export interface ChatResponse {

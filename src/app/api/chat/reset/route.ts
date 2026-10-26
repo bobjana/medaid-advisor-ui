@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { getChatBackend } from '@/lib/api/backend';
+import { getAgentBackendUrl, getChatBackend, isAgentBackend } from '@/lib/api/backend';
 import { resetSessionContext } from '@/lib/api/adk/client';
 import { clearSessionContext } from '@/lib/api/vertex/sessions';
 
@@ -7,7 +7,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
-  let body: { sessionId?: string };
+  let body: { sessionId?: string; backend?: unknown };
   try {
     body = (await req.json()) as { sessionId?: string };
   } catch {
@@ -18,10 +18,12 @@ export async function POST(req: NextRequest) {
   }
 
   const userId = req.headers.get('x-user-id') ?? 'anonymous';
+  const agentBackend = isAgentBackend(body.backend) ? body.backend : undefined;
+  const baseUrl = agentBackend ? getAgentBackendUrl(agentBackend) : undefined;
 
   try {
-    if (getChatBackend() === 'local') {
-      await resetSessionContext(userId, body.sessionId);
+    if (agentBackend !== undefined || getChatBackend() === 'local') {
+      await resetSessionContext(userId, body.sessionId, { baseUrl });
     } else {
       await clearSessionContext(body.sessionId);
     }

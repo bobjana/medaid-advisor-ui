@@ -6,12 +6,22 @@ export function getAdkAppName(): string {
   return process.env.ADK_APP_NAME ?? DEFAULT_APP_NAME;
 }
 
-function getSessionsUrl(userId: string): string {
-  return `${getLocalBackendUrl()}/apps/${getAdkAppName()}/users/${encodeURIComponent(userId)}/sessions`;
+/**
+ * Base URL of the agent server to talk to; defaults to the configured local
+ * ADK backend. The python parity backend passes its own URL here.
+ */
+export type SessionClientOptions = { baseUrl?: string };
+
+function getSessionsUrl(userId: string, baseUrl: string): string {
+  return `${baseUrl}/apps/${getAdkAppName()}/users/${encodeURIComponent(userId)}/sessions`;
 }
 
-export async function createLocalSession(userId: string, sessionId: string): Promise<void> {
-  const resp = await fetch(getSessionsUrl(userId), {
+export async function createLocalSession(
+  userId: string,
+  sessionId: string,
+  opts: SessionClientOptions = {},
+): Promise<void> {
+  const resp = await fetch(getSessionsUrl(userId, opts.baseUrl ?? getLocalBackendUrl()), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId }),
@@ -38,8 +48,9 @@ export async function setSessionContext(
   userId: string,
   sessionId: string,
   context: LocalSessionContext,
+  opts: SessionClientOptions = {},
 ): Promise<void> {
-  const url = `${getLocalBackendUrl()}/apps/${getAdkAppName()}/users/${encodeURIComponent(userId)}/sessions/${encodeURIComponent(sessionId)}`;
+  const url = `${opts.baseUrl ?? getLocalBackendUrl()}/apps/${getAdkAppName()}/users/${encodeURIComponent(userId)}/sessions/${encodeURIComponent(sessionId)}`;
   const resp = await fetch(url, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -57,8 +68,12 @@ export async function setSessionContext(
   );
 }
 
-export async function resetSessionContext(userId: string, sessionId: string): Promise<void> {
-  const url = `${getLocalBackendUrl()}/apps/${getAdkAppName()}/users/${encodeURIComponent(userId)}/sessions/${encodeURIComponent(sessionId)}`;
+export async function resetSessionContext(
+  userId: string,
+  sessionId: string,
+  opts: SessionClientOptions = {},
+): Promise<void> {
+  const url = `${opts.baseUrl ?? getLocalBackendUrl()}/apps/${getAdkAppName()}/users/${encodeURIComponent(userId)}/sessions/${encodeURIComponent(sessionId)}`;
   const resp = await fetch(url, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },

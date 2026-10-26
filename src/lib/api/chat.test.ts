@@ -148,6 +148,24 @@ describe('streamMessage', () => {
     expect(events).toEqual([{ type: 'text', delta: 'hi' }]);
   });
 
+  it('forwards a caller teardown signal to the fetch', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      body: ndjsonStream([
+        JSON.stringify({ type: 'text', delta: 'hi' }),
+        JSON.stringify({ type: 'done' }),
+      ]),
+    });
+
+    const caller = new AbortController();
+    for await (const ev of streamMessage({ message: 'test' }, { signal: caller.signal })) {
+      if (ev.type === 'text') caller.abort();
+    }
+
+    const [, init] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(init.signal.aborted).toBe(true);
+  });
+
   it('parses citation events', async () => {
     const citation = {
       title: 'plan.pdf',

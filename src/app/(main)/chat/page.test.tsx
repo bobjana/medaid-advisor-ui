@@ -70,6 +70,7 @@ beforeEach(() => {
   streamMessageMock.mockReset();
   setChatContextMock.mockReset();
   setChatContextMock.mockResolvedValue({ sessionId: 's-test' });
+  window.localStorage.clear();
   Element.prototype.scrollIntoView = vi.fn();
 });
 
@@ -244,6 +245,7 @@ describe('ChatPage context picker', () => {
       sessionId: 's-test',
       scheme: 'bonitas',
       plan: 'boncomplete',
+      backend: 'adk',
     });
     expect(contextChip()).toHaveTextContent('Bonitas › BonComplete');
   });
@@ -264,6 +266,7 @@ describe('ChatPage context picker', () => {
       sessionId: 's-test',
       scheme: 'discovery',
       plan: null,
+      backend: 'adk',
     });
     expect(contextChip()).toHaveTextContent('Discovery');
 
@@ -275,6 +278,7 @@ describe('ChatPage context picker', () => {
       sessionId: 's-test',
       scheme: null,
       plan: null,
+      backend: 'adk',
     });
     expect(contextChip()).toHaveTextContent('All Schemes');
   });
@@ -354,5 +358,109 @@ describe('ChatPage busy indicator', () => {
 
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(screen.getByText('Here you go.')).toBeInTheDocument();
+  });
+});
+
+describe('ChatPage backend switch', () => {
+  function backendToggle() {
+    return screen.getByRole('group', { name: 'Chat backend' });
+  }
+
+  it('renders the ADK/Python toggle with ADK active by default', () => {
+    render(<ChatPage />);
+
+    expect(within(backendToggle()).getByRole('button', { name: 'ADK' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(within(backendToggle()).getByRole('button', { name: 'Python' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+  });
+
+  it('remembers the last selection across a reload', () => {
+    window.localStorage.setItem('medaid:chat-backend', 'python');
+
+    render(<ChatPage />);
+
+    expect(within(backendToggle()).getByRole('button', { name: 'Python' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  it('switches silently when no chat is in progress and tags the next turn', async () => {
+    vi.useFakeTimers();
+    streamMessageMock.mockReturnValueOnce(laterTurn());
+
+    render(<ChatPage />);
+    fireEvent.click(within(backendToggle()).getByRole('button', { name: 'Python' }));
+    await flush();
+
+    expect(
+      within(backendToggle()).getByRole('button', { name: 'Python' }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    await askSchemeQuestion();
+    expect(streamMessageMock.mock.calls[0][0]).toMatchObject({ backend: 'python' });
+  });
+
+  it('prompts that the chat will be reset when switching mid-chat, and resets on confirm', async () => {
+    vi.useFakeTimers();
+    streamMessageMock.mockReturnValueOnce(firstTurn());
+
+    render(<ChatPage />);
+    await askSchemeQuestion();
+    expect(streamMessageMock.mock.calls[0][0]).toMatchObject({ backend: 'adk' });
+
+    fireEvent.click(within(backendToggle()).getByRole('button', { name: 'Python' }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText(/current chat will be reset/i)).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: /Switch & reset chat/i }));
+    await flush();
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(
+      within(backendToggle()).getByRole('button', { name: 'Python' }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    // The transcript is back to the welcome message only.
+    expect(screen.getByText(/What would you like to know/)).toBeInTheDocument();
+    expect(
+      screen.queryByText('Which medical scheme are you on or considering?'),
+    ).not.toBeInTheDocument();
+
+    // The next turn goes to the newly selected backend with no session carried over.
+    streamMessageMock.mockReturnValueOnce(laterTurn());
+    await askSchemeQuestion();
+    expect(streamMessageMock.mock.calls[1][0]).toMatchObject({
+      message: 'I want to compare medical aid schemes',
+      backend: 'python',
+    });
+    expect(streamMessageMock.mock.calls[1][0].sessionId).toBeUndefined();
+  });
+
+  it('keeps the conversation and backend when the switch is cancelled', async () => {
+    vi.useFakeTimers();
+    streamMessageMock.mockReturnValueOnce(firstTurn());
+
+    render(<ChatPage />);
+    await askSchemeQuestion();
+
+    fireEvent.click(within(backendToggle()).getByRole('button', { name: 'Python' }));
+    const dialog = screen.getByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await flush();
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(within(backendToggle()).getByRole('button', { name: 'ADK' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(
+      screen.getByText('Which medical scheme are you on or considering?'),
+    ).toBeInTheDocument();
   });
 });

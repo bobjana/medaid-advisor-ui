@@ -5,9 +5,19 @@ import { Send, Loader2, Stethoscope, RotateCcw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import type { Citation, ContextOptions, ContextState, PlanOption, SchemeOption } from '@/types';
 import { setChatContext, streamMessage } from '@/lib/api';
-import { randomUUID, nowMs } from '@/lib/utils';
+import type { AgentBackend } from '@/lib/api/backend';
+import { useChatBackend } from '@/hooks/useChatBackend';
+import { cn, randomUUID, nowMs } from '@/lib/utils';
 import { SCHEME_CATALOG } from '@/lib/chat/scheme-catalog';
 import { mergeCitations } from '@/lib/chat/citations';
 import { describeChatError } from '@/lib/chat/errors';
@@ -16,6 +26,11 @@ import { Citations } from '@/components/chat/Citations';
 import { ContextSelector } from '@/components/chat/ContextSelector';
 import { ContextPicker, type ContextSelection } from '@/components/chat/ContextPicker';
 import { ThinkingIndicator } from '@/components/chat/ThinkingIndicator';
+
+const BACKEND_OPTIONS: { id: AgentBackend; label: string; title: string }[] = [
+  { id: 'adk', label: 'ADK', title: 'Google ADK agent (Gemini)' },
+  { id: 'python', label: 'Python', title: 'Python backend (FastAPI RAG)' },
+];
 
 const JSON_BLOCK_RE = /```(?:json)?\s*\{[\s\S]*?"(?:schemes|plans|type)"[\s\S]*?\}\s*```/g;
 
@@ -70,6 +85,11 @@ export default function ChatPage() {
   const [contextBusy, setContextBusy] = useState(false);
   const [pendingPlan, setPendingPlan] = useState<PendingPlan | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  // The agent backend picked in the header. Persisted so the choice survives
+  // a reload; the session itself does not (a reload always starts fresh).
+  const [backend, setBackend] = useChatBackend();
+  // Set while a backend switch is awaiting the user's reset confirmation.
+  const [pendingBackend, setPendingBackend] = useState<AgentBackend | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   // A page load always starts a fresh conversation: the session id is only
   // held in this ref for the lifetime of the page (set from the backend's
@@ -81,6 +101,9 @@ export default function ChatPage() {
   const pendingPlanRef = useRef<PendingPlan | null>(null);
   const planTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const planResolvedRef = useRef(true);
+  // Aborted when the conversation is torn down (New chat / backend switch)
+  // so an in-flight turn cannot keep writing into the fresh chat.
+  const streamAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -177,6 +200,7 @@ export default function ChatPage() {
         sessionId: sessionIdRef.current,
         scheme: next.schemeSlug ?? null,
         plan: next.planId ?? null,
+        backend,
       });
       if (result.sessionId) sessionIdRef.current = result.sessionId;
     } catch (err) {
@@ -306,10 +330,13 @@ export default function ChatPage() {
     ]);
 
     let turnError: string | null = null;
+    // Tearing the turn down (reset / backend switch) aborts this controller.
+    const abort = new AbortController();
+    streamAbortRef.current = abort;
     try {
       const stream = streamMessage(
-        { message: trimmed, sessionId: sessionIdRef.current },
-        { stallTimeoutMs: CHAT_STALL_TIMEOUT_MS },
+        { message: trimmed, sessionId: sessionIdRef.current, backend },
+        { stallTimeoutMs: CHAT_STALL_TIMEOUT_MS, signal: abort.signal },
       );
       let finalContent = '';
       let finalCitations: Citation[] | undefined;
@@ -364,6 +391,11 @@ export default function ChatPage() {
         ),
       );
     } catch (err) {
+      if (abort.signal.aborted) {
+        // The turn was torn down deliberately (reset / backend switch); the
+        // fresh conversation must not surface this as an error.
+        return;
+      }
       const message =
         err instanceof Error
           ? `Unable to reach chat service: ${err.message}`
@@ -383,6 +415,7 @@ export default function ChatPage() {
           ),
         );
       }
+      if (streamAbortRef.current === abort) streamAbortRef.current = null;
       setPendingId(null);
       setLoading(false);
     }
@@ -394,11 +427,34 @@ export default function ChatPage() {
   }
 
   function resetConversation() {
+    streamAbortRef.current?.abort();
     cancelPlanDecision();
     sessionIdRef.current = undefined;
     setMessages([WELCOME_MESSAGE]);
     setActiveContext({});
     setError(null);
+  }
+
+  /**
+   * Switch the chat backend. A conversation that already has messages (or a
+   * session) is tied to the current backend's session store, so switching
+   * mid-chat means starting over — ask before discarding it.
+   */
+  function selectBackend(next: AgentBackend) {
+    if (next === backend) return;
+    if (messages.length > 1 || sessionIdRef.current !== undefined) {
+      setPendingBackend(next);
+      return;
+    }
+    setBackend(next);
+  }
+
+  function confirmBackendSwitch() {
+    const next = pendingBackend;
+    if (!next) return;
+    setPendingBackend(null);
+    setBackend(next);
+    resetConversation();
   }
 
   const canSend = input.trim().length > 0 && !loading;
@@ -421,6 +477,29 @@ export default function ChatPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <div
+              role="group"
+              aria-label="Chat backend"
+              className="inline-flex items-center rounded-full border border-primary/20 bg-primary/10 p-0.5 text-xs font-semibold"
+            >
+              {BACKEND_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => selectBackend(opt.id)}
+                  aria-pressed={backend === opt.id}
+                  title={opt.title}
+                  className={cn(
+                    'rounded-full px-2.5 py-1 transition-colors',
+                    backend === opt.id
+                      ? 'bg-primary text-primary-foreground shadow-xs'
+                      : 'text-primary hover:bg-primary/20',
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
             <button
               type="button"
               onClick={resetConversation}
@@ -543,6 +622,31 @@ export default function ChatPage() {
           </form>
         </div>
       </Card>
+
+      <Dialog
+        open={pendingBackend !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingBackend(null);
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              Switch to the {pendingBackend === 'python' ? 'Python' : 'ADK'} backend?
+            </DialogTitle>
+            <DialogDescription>
+              A chat session is already in progress. Switching backends starts a new
+              conversation — the current chat will be reset.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingBackend(null)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmBackendSwitch}>Switch &amp; reset chat</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

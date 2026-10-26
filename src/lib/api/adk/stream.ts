@@ -16,6 +16,14 @@ export interface AdkQueryInput {
   sessionId?: string;
 }
 
+export interface AdkQueryOptions {
+  /**
+   * Agent server base URL; defaults to the configured local ADK backend.
+   * The python parity backend speaks the same wire contract on its own URL.
+   */
+  baseUrl?: string;
+}
+
 function* emitEvent(event: unknown): Generator<AgentEvent> {
   // Runtime failures arrive in-band; surface them instead of dropping them.
   const error = extractError(event);
@@ -50,17 +58,19 @@ function parseSseBlock(block: string): unknown[] {
 
 export async function* streamAdkQuery(
   input: AdkQueryInput,
+  opts: AdkQueryOptions = {},
 ): AsyncGenerator<AgentEvent> {
+  const baseUrl = opts.baseUrl ?? getLocalBackendUrl();
   let sessionId = input.sessionId ?? `s-${randomUUID()}`;
   try {
-    await createLocalSession(input.userId, sessionId);
+    await createLocalSession(input.userId, sessionId, opts);
   } catch (err) {
     yield { type: 'error', message: (err as Error).message };
     return;
   }
   yield { type: 'session', sessionId };
 
-  const runUrl = `${getLocalBackendUrl()}/run_sse`;
+  const runUrl = `${baseUrl}/run_sse`;
   const body = JSON.stringify({
     userId: input.userId,
     sessionId,
@@ -78,7 +88,7 @@ export async function* streamAdkQuery(
   let resp = await doRun();
   if (resp.status === 404) {
     sessionId = `s-${randomUUID()}`;
-    await createLocalSession(input.userId, sessionId);
+    await createLocalSession(input.userId, sessionId, opts);
     yield { type: 'session', sessionId };
     resp = await doRun();
   }

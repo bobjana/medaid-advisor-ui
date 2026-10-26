@@ -1,11 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { NextRequest } from 'next/server';
 import { POST } from './route';
 import { getChatBackend } from '@/lib/api/backend';
 import { resetSessionContext } from '@/lib/api/adk/client';
 import { clearSessionContext } from '@/lib/api/vertex/sessions';
 
-vi.mock('@/lib/api/backend', () => ({ getChatBackend: vi.fn() }));
+vi.mock('@/lib/api/backend', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/api/backend')>()),
+  getChatBackend: vi.fn(),
+}));
 vi.mock('@/lib/api/adk/client', () => ({ resetSessionContext: vi.fn() }));
 vi.mock('@/lib/api/vertex/sessions', () => ({ clearSessionContext: vi.fn() }));
 
@@ -26,6 +29,11 @@ describe('POST /api/chat/reset', () => {
     vi.clearAllMocks();
     mockedResetSessionContext.mockResolvedValue(undefined);
     mockedClearSessionContext.mockResolvedValue(undefined);
+    process.env.PYTHON_BACKEND_URL = 'http://py:9000';
+  });
+
+  afterEach(() => {
+    delete process.env.PYTHON_BACKEND_URL;
   });
 
   it('patches session state on the local backend', async () => {
@@ -35,7 +43,21 @@ describe('POST /api/chat/reset', () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
-    expect(mockedResetSessionContext).toHaveBeenCalledWith('user-1', 's-abc');
+    expect(mockedResetSessionContext).toHaveBeenCalledWith('user-1', 's-abc', {
+      baseUrl: undefined,
+    });
+    expect(mockedClearSessionContext).not.toHaveBeenCalled();
+  });
+
+  it('targets the python parity server when the UI selects the python backend', async () => {
+    mockedGetChatBackend.mockReturnValue('gcp');
+
+    const res = await POST(request({ sessionId: 's-abc', backend: 'python' }));
+
+    expect(res.status).toBe(200);
+    expect(mockedResetSessionContext).toHaveBeenCalledWith('user-1', 's-abc', {
+      baseUrl: 'http://py:9000',
+    });
     expect(mockedClearSessionContext).not.toHaveBeenCalled();
   });
 
